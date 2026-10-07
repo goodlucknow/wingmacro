@@ -1,5 +1,6 @@
 ; Scroll Accelerator + Touch to Cursor
 ; Combined script for Surface Pro touch-and-turn workflow
+; Wheel acceleration applies only over Wing Edit (see TARGET_* below); momentum is off by default.
 ; AHK v2
 
 #Requires AutoHotkey v2.0
@@ -34,16 +35,31 @@ SCROLL_2 := 12
 SCROLL_1 := 8
 SCROLL_0 := 6
 
-; Momentum settings
+; Momentum (scrolling continues briefly after a fast spin). Off by default: on a fader it
+; keeps moving the value after you stop turning.
+MOMENTUM_ENABLED := false
 MOMENTUM_THRESHOLD := 16
 MOMENTUM_DECAY := 0.80
+
+; Only accelerate the wheel over Wing Edit; every other window scrolls normally.
+; Matched against the window under the mouse (process name or title, case-insensitive).
+TARGET_PROCESS := "wing"
+TARGET_TITLE := "wing edit"
 
 ; ============================================
 ; TOUCH-TO-CURSOR CONSTANTS - Surface Pro 4
 ; ============================================
 
-SCREEN_WIDTH := 2736
-SCREEN_HEIGHT := 1824
+; Screen size is read at start-up and whenever the display changes (was fixed to the SP4's 2736x1824).
+; The raw ranges below are the Surface Pro 4 touch panel's and stay fixed.
+SCREEN_WIDTH := A_ScreenWidth
+SCREEN_HEIGHT := A_ScreenHeight
+OnMessage(0x007E, UpdateScreenSize)  ; WM_DISPLAYCHANGE
+
+UpdateScreenSize(*) {
+    global SCREEN_WIDTH := A_ScreenWidth
+    global SCREEN_HEIGHT := A_ScreenHeight
+}
 
 RAW_X_MIN := 0
 RAW_X_MAX := 9600
@@ -258,8 +274,21 @@ MomentumDecay() {
 ; SCROLL HOTKEYS
 ; ============================================
 
+IsWingEditUnderMouse() {
+    MouseGetPos(, , &win)
+    if (!win)
+        return false
+    try {
+        return InStr(WinGetProcessName(win), TARGET_PROCESS) || InStr(WinGetTitle(win), TARGET_TITLE)
+    } catch {
+        return false
+    }
+}
+
+#HotIf IsWingEditUnderMouse()
 WheelUp::HandleScroll(1)
 WheelDown::HandleScroll(-1)
+#HotIf
 
 ; ============================================
 ; SCROLL HANDLER
@@ -273,7 +302,7 @@ HandleScroll(direction) {
     global ACCEL_LEVEL4, ACCEL_LEVEL3, ACCEL_LEVEL2, ACCEL_LEVEL1
     global SCROLL_9, SCROLL_8, SCROLL_7, SCROLL_6, SCROLL_5
     global SCROLL_4, SCROLL_3, SCROLL_2, SCROLL_1, SCROLL_0
-    global MOMENTUM_THRESHOLD
+    global MOMENTUM_THRESHOLD, MOMENTUM_ENABLED
     
     currentTime := A_TickCount
     
@@ -341,7 +370,7 @@ HandleScroll(direction) {
     }
     
     ; Set momentum
-    if (scrollAmount >= MOMENTUM_THRESHOLD) {
+    if (MOMENTUM_ENABLED && scrollAmount >= MOMENTUM_THRESHOLD) {
         momentum := scrollAmount * momentumMultiplier * direction
         scrollDirection := direction
     } else {
