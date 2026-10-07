@@ -98,7 +98,6 @@ CLAUDE.md
   - `logf` (frequencies, times) needs **value-proportional stepping**. Fixed linear steps failed at the high end of the range.
   - Some parameters depend on the effect's mode and aren't always present (e.g. ST-DL offset). Handle this gracefully.
   - `str` parameters need a way to cycle through their options.
-  - The earlier build had a database of 26 FX models and about 250 parameters, transcribed from the protocol PDF. Rebuild it from the PDF into `app/` as data (JSON or YAML), not as code.
 - **Tap tempo**:
   - Average the taps, and reset after a gap of 2 s or more.
   - Musical multipliers: 1/8, 1/4, 1/2, 1×, 2×.
@@ -106,7 +105,7 @@ CLAUDE.md
   - Delay time is `/fx/X/time`. Detect delays by name: ST-DL, TAP-DL, TAPE-DL, DEL/REV.
   - **Exclude BBD-DL**. It uses `/dly` and doesn't suit tap tempo.
 - **Native protocol facts (verified on WING Rack fw 3.1.1, 2026-10-07)**: navigate by name tokens from root (`/ch/1/fdr` → `da c1"ch" c0"1" c2"fdr"`); a data request answers `d7 <hash> <value> de`, a missing node gives a bare `de`; every client receives change events for everything without subscribing (but not for its own writes); `0xdd` on a node returns typed definitions (name, type, unit, min/max, enum items) of all its children; the console refuses a reconnect for ~1 s. Details in `app/wingmacro/wing.py`.
-- **FX parameters come from the console** (`0xdd` definitions of `/fx/N`), so model/mode-dependent params are always current. This may make the PDF-transcribed FX database unnecessary (pending user OK).
+- **FX parameters come from the console** (`0xdd` definitions of `/fx/N`), so model/mode-dependent params are always current. No hardcoded FX database (decided 2026-10-07): new models/params from WING firmware updates work without code changes.
 - Input gain: `/ch/N/in/set/$g` is read-only; write `/io/in/<grp>/<n>/g` from `/ch/N/in/conn/{grp,in}`.
 - Paths checked against the protocol doc (v3.1.0): `/{ch,aux,bus,main,mtx,dca}/N/fdr` and `/mute`, sends `/ch/N/send/B/lvl`, mute groups `/mgrp/1..8/mute`, FX `/fx/1..16/...`. The PDF is gitignored (free download from Behringer); see `docs/README.md`.
 
@@ -135,7 +134,6 @@ CLAUDE.md
 2. ~~Config model~~ (`docs/config-model.md`) and ~~app skeleton~~: done 2026-10-07, tested on the WING + pad (mute, level/floor, accel, push-turn, hold/cancel, soft-mute fades, LEDs).
 3. Real web config UI (forms per action, FX param picker from `/api/fx/N`); currently a JSON editor.
 4. Test on hardware with real presses: LED feel (hold progress, armed flash), acceleration curves, tap tempo on a delay slot, gain.
-5. Decide whether the PDF FX database is still needed (console definitions cover types/ranges).
 7. Rewrite `platform/windows/scroll-accel.ahk`. The original was lost. Consider scoping it to the Wing Edit window (`#HotIf WinActive(...)`) so other mice aren't affected.
 8. Packaging/autostart for each host: Windows startup task, macOS launchd, Linux systemd.
 9. Test on real hardware, against the WING at home.
