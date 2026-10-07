@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate firmware/vial/oled_frames.h: 128x32 OLED frames, one per layer.
 
-Each frame = WING logo on the left + layer number (1-4) shown dark on a bright
+Each frame (left-aligned; the case hides the right edge) = WING logo + layer number (1-4) shown dark on a bright
 rounded box on the right.
 
 Usage: .venv/bin/python firmware/tools/gen_oled.py [--preview]
@@ -15,7 +15,8 @@ from PIL import Image, ImageDraw, ImageFont
 W, H = 128, 32
 LOGO = os.path.join(os.path.dirname(__file__), "wing_logo.png")
 THRESHOLD = 140  # grey level below which a logo pixel is lit
-TEXT_BOX = (0, 0, 98, H)  # area the wordmark is centred in
+LOGO_W = 94                      # logo width; everything is left-aligned
+GAP = 4                          # space between logo and layer box
 BOX_W, BOX_H, BOX_R = 24, 30, 3  # layer-number box size and corner radius
 DIGIT_PX = 24                    # digit font size
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -23,14 +24,13 @@ OUT = os.path.join(os.path.dirname(__file__), "..", "vial", "oled_frames.h")
 
 
 def wordmark():
-    """WING logo (cropped from the protocol PDF cover) scaled into TEXT_BOX."""
+    """WING logo (cropped from the protocol PDF cover), left-aligned, vertically centred."""
     logo = Image.open(LOGO).convert("L")
-    x0, y0, x1, y1 = TEXT_BOX
-    scale = min((x1 - x0 - 4) / logo.width, (y1 - y0 - 6) / logo.height)
-    w, h = round(logo.width * scale), round(logo.height * scale)
+    w = LOGO_W
+    h = round(logo.height * w / logo.width)
     small = logo.resize((w, h), Image.LANCZOS).point(lambda v: 255 if v < THRESHOLD else 0, "1")
     img = Image.new("1", (W, H), 0)
-    img.paste(small, (x0 + (x1 - x0 - w) // 2, y0 + (y1 - y0 - h) // 2))
+    img.paste(small, (0, (H - h) // 2))
     return img
 
 
@@ -38,7 +38,8 @@ def frame(layer):
     """Logo + layer number (1-4) cut out of a bright rounded box on the right."""
     img = wordmark()
     d = ImageDraw.Draw(img)
-    box = (W - BOX_W - 2, (H - BOX_H) // 2, W - 3, (H + BOX_H) // 2 - 1)
+    x0 = LOGO_W + GAP
+    box = (x0, (H - BOX_H) // 2, x0 + BOX_W - 1, (H + BOX_H) // 2 - 1)
     d.rounded_rectangle(box, radius=BOX_R, fill=1)
     font = ImageFont.truetype(FONT, DIGIT_PX)
     text = str(layer + 1)
