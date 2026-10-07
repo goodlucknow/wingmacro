@@ -232,7 +232,7 @@ function renderPad() {
       onclick: () => { S.sel = { kind: "knob", knob: k }; render(); } },
       dial(), h("span", { class: "kl" }, m ? (m.name || rotSummary(m.turn) || "Knob") : "—"));
   };
-  const oled = h("div", { class: "oled", title: "OLED: shows the layer" }, h("span", { class: "ow" }, "WING"),
+  const oled = h("div", { class: "oled", title: "OLED: shows the layer" }, h("span", { class: "ow" }, h("span", { class: "logo-wing" })),
     h("span", { class: "ol" }, (live?.pad.connected ? live.pad.layer : S.layer) + 1));
   const padBody = h("div", { class: "doio" },
     h("div", { class: "well" }, keys),
