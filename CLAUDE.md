@@ -24,6 +24,8 @@ The same app must run on all three:
 | Desktop Mac | At home | Also runs Wing Edit |
 | Linux container on home server | At home, desk always controllable without the Mac on | No Wing Edit here. Check USB MIDI works in the container (host kernel needs the USB audio/MIDI driver); fall back to a small VM with USB passthrough if not |
 
+**Home server host is IncusOS** — immutable, no shell, no sudo, no `/etc/udev`. Never suggest host-shell commands; host changes are only `incus config ...` run from the Mac/UI. The pad reaches the container as USB passthrough (`/dev/bus/usb/...`, d010:1601, group `claude`, rw), which follows replugs. There are no `/dev/hidraw*` nodes: reach Vial raw HID (interface 1, EP 0x82 in / 0x03 out, 32-byte reports) via **libusb** (pyusb or hidapi's libusb backend), detaching the kernel driver on interface 1 only. MIDI works via ALSA (`/dev/snd/midiC*D0`). Bootloader `1eaf:0003` is also passed through for flashing.
+
 Only one host owns the pad at a time — whichever it's plugged into.
 
 ## Architecture

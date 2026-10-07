@@ -39,6 +39,8 @@ to an ordinary keycode is simply invisible to the app.
 ## Layers
 
 Firmware layer 0 holds everything; layers 1–3 are transparent (big knob stays wheel).
+Currently set in Vial: big knob push = TO(1)/TO(2)/TO(3)/TO(0) on layers 0–3 (so note 66 is
+not sent). Read the live keymap with `tools/vialhid.py dump`.
 
 ## Open
 
