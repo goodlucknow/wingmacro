@@ -46,9 +46,7 @@ number (1–4, i.e. firmware layer + 1) dark on a bright box. Read the live keym
 **Reflashing resets Vial edits** (VIA's EEPROM magic is the build date). Bake anything worth
 keeping into `firmware/vial/` defaults, or save a `.vil` in Vial first.
 
-## Open
+## Mapping
 
-- Paging: proposed that "layers" are app-side pages (firmware notes never change), so the
-  LEDs and the web UI always know which page is active.
-- Use of the 8 keys beyond the per-page buttons (page select, tap tempo, connect/refresh, spare).
-- Push without turn: optional button action per page?
+These are firmware **defaults** only. What each MIDI control does is set entirely in wingmacro
+(macros), never in this file. See "Mapping model" in `CLAUDE.md`.

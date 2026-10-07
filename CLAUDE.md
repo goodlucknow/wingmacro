@@ -103,28 +103,25 @@ CLAUDE.md
   - **Exclude BBD-DL**. It uses `/dly` and doesn't suit tap tempo.
 - Paths checked against the protocol doc (v3.1.0): `/{ch,aux,bus,main,mtx,dca}/N/fdr` and `/mute`, sends `/ch/N/send/B/lvl`, mute groups `/mgrp/1..8/mute`, FX `/fx/1..16/...`. The PDF is gitignored (free download from Behringer); see `docs/README.md`.
 
-## Features (from the previous app — rebuild these)
+## Mapping model (decided 2026-10-07)
 
-- Per layer: 8 buttons and 4 rotaries.
-  - The 4 rotaries are the **2 small encoders × 2 functions**: turning alone gives the primary function, and **turning while the knob is pushed in** gives the secondary function.
-  - Handle push-and-turn **in the app, not the firmware**. Each encoder push sends a note-on when pressed and a note-off when released. The app tracks whether the push is held and routes turn ticks to the primary or secondary function. This keeps the Vial keymap stock and remappable.
-  - A push with no turn can optionally act as its own button action. Decide this in the pad map.
-  - Still open: what the 8 keys beyond the 8 buttons do (layer select, tap tempo, spare?). Settle this in `docs/pad-map.md`.
-- Button functions:
-  - hard mute
-  - soft mute, with a fade time
-  - mute group (1–8)
-  - The config UI shows only the fields that apply to the chosen function.
-- Rotary functions:
-  - fader level for any fader type
-  - send level (channel → bus)
-  - FX parameter (slot + parameter, picked from a list of the FX currently loaded)
-- A single connect/refresh action that polls state, scans the FX slots, and updates the list of delays for tap tempo.
+- **The pad has no fixed function layout.** In Vial the user makes some keys ordinary keys or function keys (mapped in Wing Edit for navigation), and makes others MIDI. **Every MIDI control is mapped in wingmacro** to whatever the user wants. Never ask "what should key X do". Build the mapping system instead.
+- **Macros, in the style of DiGiCo macros.** A control triggers a user-defined macro: an ordered list of actions, with parameters, plus things like waits. Macros are data in the config, built and edited in the web UI.
+- **Controls are identified by MIDI message** (channel + note), not by key position. Vial layers that send different notes show up as different controls. Layers that pass through to the layer below send the same notes, so the app can't tell them apart. If per-layer mappings are wanted, give those layers their own notes in Vial.
+- **Control kinds**: a button (press and release, so it can act on press, on release or while held), and an encoder (a CCW/CW note pair, with acceleration). An encoder push can act as a modifier: turning while it is held routes to a secondary macro or function. A push with no turn can also be a button.
+- **LED feedback** is also part of a mapping, e.g. this LED is red while this mute is on. The LED index is the key position (see `docs/pad-map.md`).
+
+### Action / function library (from the previous app — rebuild these as macro actions)
+
+- Buttons: hard mute, soft mute (with fade time), mute group (1–8), tap tempo, connect/refresh.
+- Rotaries: fader level for any fader type, send level (channel → bus), FX parameter (slot + parameter, picked from a list of the FX currently loaded).
+- The config UI shows only the fields that apply to the chosen action.
+- Connect/refresh polls state, scans the FX slots, and updates the list of delays for tap tempo.
 
 ## Open items / next priorities
 
-1. Agree the pad map (`docs/pad-map.md`). It covers layers, notes, LED indices, the encoder push notes, and the use of the remaining 8 keys.
-2. Vial keymap: VialRGB direct mode, big knob = wheel, MIDI notes elsewhere. Flash and verify in the Vial editor.
+1. ~~Pad map~~ and ~~Vial keymap~~: done (2026-10-07). See `docs/pad-map.md` and `firmware/`.
+2. Design the macro/mapping data model (config schema) and the action library.
 3. App skeleton: native TCP client + discovery/manual IP, MIDI in, raw HID LED out, web config UI, config file.
 4. Port the WING logic above (fader floor, soft mutes, mute groups, tap tempo).
 5. FX database from the protocol PDF + type-based stepping + logf scaling.
