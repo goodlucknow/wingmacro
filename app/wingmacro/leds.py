@@ -98,17 +98,26 @@ class Leds:
 
     # Burst, after QMK's SOLID_SPLASH (quantum/rgb_matrix/animations/solid_splash_anim.h): a wavefront
     # spreads from the key; each key lights as the front reaches it, then fades out behind it.
-    BURST_SPEED = 6.0  # keys per second
+    BURST_TIME = 1.0   # whole animation, seconds
+    BURST_SPEED = 6.0  # keys per second: the front crosses the pad in ~0.7 s
     BURST_FADE = 0.45  # seconds each key takes to fade after the front passes
-    BURST_EDGE = 0.35  # soft leading edge, in keys
-    BURST_TIME = 4.3 / BURST_SPEED + BURST_FADE  # front crosses the 4x4 grid corner to corner
+    BURST_EDGE = 0.9   # soft leading edge, in keys
+    BURST_REACH = 4.8  # keys: strength falls off linearly to zero at this distance
+
+    @staticmethod
+    def _smooth(x):
+        x = min(1.0, max(0.0, x))
+        return x * x * (3 - 2 * x)
 
     def burst_level(self, d, e):
         """0..1 brightness of a key `d` keys from the source, `e` seconds after firing."""
-        lag = e - d / self.BURST_SPEED  # seconds since the front reached this key
-        lead = min(1.0, max(0.0, 1 + lag * self.BURST_SPEED / self.BURST_EDGE))  # fade in just ahead of the front
-        tail = 1.0 if lag <= 0 else max(0.0, 1 - lag / self.BURST_FADE)
-        k = lead * tail
+        sm = self._smooth
+        lag = e - d / self.BURST_SPEED                      # seconds since the front reached this key
+        lead = sm(1 + lag * self.BURST_SPEED / self.BURST_EDGE)   # eases in just ahead of the front
+        tail = 1 - sm(lag / self.BURST_FADE)                 # eases out behind it
+        reach = max(0.0, 1 - d / self.BURST_REACH)           # weaker the further it travels
+        end = 1 - sm((e - (self.BURST_TIME - 0.2)) / 0.2)    # everything gone by BURST_TIME
+        k = lead * tail * reach * end
         return k * k  # perceptual: LED brightness is linear, the eye isn't
 
     def _draw_bursts(self, out, now):
