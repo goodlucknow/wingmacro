@@ -1,6 +1,6 @@
 # wingmacro
 
-Control a Behringer WING (or WING Rack) from a DOIO KB16 Rev2 macro pad, over the network via OSC, with useful LED feedback on the pad.
+Control a Behringer WING (or WING Rack) from a DOIO KB16 Rev2 macro pad, over the network (WING native protocol, TCP 2222), with useful LED feedback on the pad.
 
 This is a **fresh restart**. Earlier versions (a Python/tkinter app, a Vial keymap, AutoHotkey scripts) were built in chat sessions in late 2025 and the files were lost. This document carries forward what was learned. Treat the "WING quirks" section as hard-won knowledge — verify against the WING Remote Protocols document where marked, but don't rediscover it from scratch.
 
@@ -11,7 +11,7 @@ This is a **fresh restart**. Earlier versions (a Python/tkinter app, a Vial keym
 - Precise, tactile control of the WING from a small pad: mutes, soft (timed) mutes, mute groups, faders, sends, FX parameters, tap tempo.
 - **Finest-grain control first** (e.g. 0.1 dB fader steps); speed comes from encoder acceleration, never from coarser steps.
 - The console stays the source of truth — reconfiguring things on the WING itself must not require reprogramming the pad.
-- Network control only (OSC over UDP). No USB/MIDI cable to the console.
+- Network control only (WING native protocol over TCP). No USB/MIDI cable to the console.
 - Everything lives in this repo. Nothing important exists only on one machine again.
 
 ## Where it runs
@@ -32,7 +32,7 @@ Only one host owns the pad at a time — whichever it's plugged into.
 KB16 Rev2 (stock Vial firmware)
  ├─ big knob ──── mouse wheel ──→ OS ──→ Wing Edit (touch-and-turn)
  │                                 └─ Windows: AHK scroll acceleration
- ├─ keys + small knobs ── MIDI notes ──→ wingmacro app ── OSC/UDP ──→ WING
+ ├─ keys + small knobs ── MIDI notes ──→ wingmacro app ── native TCP 2222 ──→ WING
  └─ per-key RGB ←── raw HID (VialRGB direct mode) ←── wingmacro app
 ```
 
@@ -44,7 +44,7 @@ KB16 Rev2 (stock Vial firmware)
 ## Repo layout (proposed)
 
 ```
-app/                 Python package (OSC engine, fades, tap tempo, FX db, MIDI in, LED out, web UI)
+app/                 Python package (WING client, fades, tap tempo, FX db, MIDI in, LED out, web UI)
 firmware/            Vial keymap for doio/kb16/rev2 (keymap.c, rules.mk, config.h, vial.json) + build/flash notes
 platform/windows/    scroll-accel.ahk + autostart notes
 platform/linux/      systemd unit, udev rules
@@ -67,7 +67,8 @@ CLAUDE.md
 
 ## WING quirks (carry forward)
 
-- **OSC on UDP port 2223.** The native binary protocol is on TCP 2222 — a possible alternative if OSC proves limiting, especially for FX control or live state monitoring. Discovery is by broadcast, which won't cross VLANs, so support a manually entered console IP.
+- **Use the native protocol on TCP 2222, not OSC (decided 2026-10-07).** OSC (UDP 2223) allows only **one** event subscription console-wide (last requester wins), and the iPad app plus Wing Edit run alongside the pad. Native TCP gives each client its own event stream (up to 24 clients) and needs a keepalive within 10 s. WING accepts OSC-style paths in place of native hashes. Discovery: send `WING?` (UDP) to port 2222; broadcast won't cross VLANs, so also support a manually entered console IP.
+- **Fader resolution**: −144..+10 dB in 1024 steps. Read values back rather than assuming a 0.1 dB step landed exactly.
 - **Fader floor**: −144 dB (OSC) and −90 dB are both −∞. The last usable value above −∞ is about **−89.53 dB**. Consequences:
   - Stepping *up* from −∞ must jump straight to ~−89.5 dB, or the fader never leaves the bottom.
   - Stepping *down* past −90 dB snaps to −∞.
@@ -77,7 +78,7 @@ CLAUDE.md
   - Never complete a fade early. A previous "early completion" shortcut made 10 s fades finish in about 6 s.
   - Fade-in: unmute and start from about −89.5 dB immediately. Don't let a slow easing curve sit inaudible for seconds.
   - Use a **perceptual curve** that spends most of the time above about −20 dB, where changes are audible. Low levels sound almost the same.
-  - Must work for every fader type: ch, aux, bus, main, matrix, DCA. Use generalized OSC addressing.
+  - Must work for every fader type: ch, aux, bus, main, matrix, DCA. Use generalized path addressing.
 - **Mute groups**: 8 (1–8).
 - **FX**:
   - Addressing is `/fx/{slot}/{param_key}` (16 FX slots).
@@ -98,7 +99,7 @@ CLAUDE.md
   - Applies to all FX slots the user has selected.
   - Delay time is `/fx/X/time`. Detect delays by name: ST-DL, TAP-DL, TAPE-DL, DEL/REV.
   - **Exclude BBD-DL**. It uses `/dly` and doesn't suit tap tempo.
-- ⚠️ Verify exact OSC paths for faders, mutes, sends and mute groups against the WING Remote Protocols document before relying on them. Add the PDF, or notes extracted from it, to `docs/`.
+- Paths checked against the protocol doc (v3.1.0): `/{ch,aux,bus,main,mtx,dca}/N/fdr` and `/mute`, sends `/ch/N/send/B/lvl`, mute groups `/mgrp/1..8/mute`, FX `/fx/1..16/...`. The PDF is gitignored (free download from Behringer); see `docs/README.md`.
 
 ## Features (from the previous app — rebuild these)
 
@@ -122,7 +123,7 @@ CLAUDE.md
 
 1. Agree the pad map (`docs/pad-map.md`). It covers layers, notes, LED indices, the encoder push notes, and the use of the remaining 8 keys.
 2. Vial keymap: VialRGB direct mode, big knob = wheel, MIDI notes elsewhere. Flash and verify in the Vial editor.
-3. App skeleton: OSC client + discovery/manual IP, MIDI in, raw HID LED out, web config UI, config file.
+3. App skeleton: native TCP client + discovery/manual IP, MIDI in, raw HID LED out, web config UI, config file.
 4. Port the WING logic above (fader floor, soft mutes, mute groups, tap tempo).
 5. FX database from the protocol PDF + type-based stepping + logf scaling.
 6. Encoder acceleration in the app (fine at slow speeds, faster sweeps when spun).

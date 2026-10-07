@@ -1,0 +1,7 @@
+.DS_Store
+._*
+# Protocol PDF is freely downloadable from Behringer; see docs/README.md
+docs/*.pdf
+*.bin
+__pycache__/
+.venv/
