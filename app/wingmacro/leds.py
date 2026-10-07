@@ -96,25 +96,32 @@ class Leds:
         self._draw_bursts(out, now)
         return out
 
-    BURST_SPEED = 7.0  # keys per second
-    BURST_WIDTH = 0.9  # ring thickness, in keys
-    BURST_TIME = 0.9
+    # Burst, after QMK's SOLID_SPLASH (quantum/rgb_matrix/animations/solid_splash_anim.h): a wavefront
+    # spreads from the key; each key lights as the front reaches it, then fades out behind it.
+    BURST_SPEED = 6.0  # keys per second
+    BURST_FADE = 0.45  # seconds each key takes to fade after the front passes
+    BURST_EDGE = 0.35  # soft leading edge, in keys
+    BURST_TIME = 4.3 / BURST_SPEED + BURST_FADE  # front crosses the 4x4 grid corner to corner
+
+    def burst_level(self, d, e):
+        """0..1 brightness of a key `d` keys from the source, `e` seconds after firing."""
+        lag = e - d / self.BURST_SPEED  # seconds since the front reached this key
+        lead = min(1.0, max(0.0, 1 + lag * self.BURST_SPEED / self.BURST_EDGE))  # fade in just ahead of the front
+        tail = 1.0 if lag <= 0 else max(0.0, 1 - lag / self.BURST_FADE)
+        k = lead * tail
+        return k * k  # perceptual: LED brightness is linear, the eye isn't
 
     def _draw_bursts(self, out, now):
-        """Firework: a ring of the fire colour expanding from the key, fading as it goes."""
         self.bursts = [b for b in self.bursts if now - b[1] < self.BURST_TIME]
         for src, t0, c in self.bursts:
             e = now - t0
-            r = e * self.BURST_SPEED
-            fade = 1 - e / self.BURST_TIME
             sy, sx = divmod(src, 4)
             for idx in range(N_LEDS):
                 if idx == src:
                     continue
                 y, x = divmod(idx, 4)
-                d = math.hypot(x - sx, y - sy)
-                k = max(0.0, 1 - abs(d - r) / self.BURST_WIDTH) * fade
-                if k > 0.05 and c[2] * k > out[idx][2]:
+                k = self.burst_level(math.hypot(x - sx, y - sy), e)
+                if k > 0.01 and c[2] * k > out[idx][2]:
                     out[idx] = (c[0], c[1], int(c[2] * k))
 
     def _tap(self, now, c, step):
@@ -127,7 +134,7 @@ class Leds:
     async def run(self):
         loop = asyncio.get_running_loop()
         while True:
-            await asyncio.sleep(1 / 30)
+            await asyncio.sleep(1 / 60 if self.bursts or self.fx else 1 / 30)  # smoother while animating
             if not self.engine:
                 continue
             try:

@@ -173,8 +173,8 @@ def test_burst_radiates_from_fired_key():
     leds.engine = Engine(lambda: cfg, ctx, leds)
     leds.transient(5, "confirm", None, {"trigger": "hold", "fire_anim": "burst", "hold_colour": "red"})
     t0 = leds.bursts[0][1]
-    near = leds.frame(t0 + 1 / leds.BURST_SPEED)        # ring at distance 1: neighbours of key 6 lit
-    assert near[4][2] > 100 and near[6][2] > 100 and near[15][2] < 60
-    far = leds.frame(t0 + 3 / leds.BURST_SPEED)         # ring has moved out to the far corner
-    assert far[15][2] > near[15][2] and far[4][2] < near[4][2]
+    near = leds.frame(t0 + 1 / leds.BURST_SPEED)        # front at distance 1: neighbours of key 6 at full
+    assert near[4][2] > 180 and near[6][2] > 180 and near[15][2] <= 47   # 47 = pad background
+    far = leds.frame(t0 + 3 / leds.BURST_SPEED)         # front near the far corner; neighbours fading
+    assert far[15][2] > near[15][2] and 0 < far[4][2] < near[4][2]
     assert leds.frame(t0 + leds.BURST_TIME + 0.1) and not leds.bursts
