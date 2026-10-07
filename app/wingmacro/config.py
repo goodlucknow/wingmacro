@@ -13,9 +13,13 @@ DEFAULT = {
 }
 
 PALETTE = {  # keep in sync with static/app.js
-    "red": (0, 255, 200), "orange": (16, 255, 200), "amber": (24, 255, 200), "yellow": (43, 255, 200),
-    "green": (85, 255, 200), "cyan": (128, 255, 200), "blue": (170, 255, 200), "purple": (191, 255, 200),
-    "magenta": (213, 255, 200), "white": (0, 0, 200), "off": (0, 0, 0),
+    # the WING's 12 colours (its colour picker, in order 1-12), as LED HSV at full brightness
+    "steel": (154, 172, 200), "sky": (142, 255, 200), "indigo": (182, 255, 200), "teal": (128, 255, 200),
+    "green": (99, 255, 200), "olive": (49, 255, 200), "yellow": (39, 255, 200), "orange": (19, 220, 200),
+    "crimson": (243, 255, 200), "coral": (0, 160, 200), "magenta": (213, 255, 200), "purple": (196, 255, 200),
+    "white": (0, 0, 200), "off": (0, 0, 0),
+    # older names, still accepted
+    "red": (0, 255, 200), "amber": (24, 255, 200), "cyan": (128, 255, 200), "blue": (170, 255, 200),
 }
 
 
