@@ -57,7 +57,7 @@ def _name_token(seg):
 
 def nav(path):
     """Tokens that select `path` (e.g. /ch/1/fdr) starting from the root."""
-    return bytes([0xDA]) + b"".join(_name_token(s) for s in path.strip("/").split("/"))
+    return bytes([0xDA]) + b"".join(_name_token(s) for s in path.strip("/").split("/") if s)
 
 
 def encode_value(v):
