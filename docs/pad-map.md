@@ -8,11 +8,11 @@ Verified on hardware 2026-10-07 (keys, knob pushes, knob directions; big knob se
 | Control | Note |
 |---|---|
 | Keys 0–15 (index = row × 4 + col, top-left = 0) | 48–63 |
-| Small knob 1 push (top-left knob) | 64 |
-| Small knob 2 push (top-right knob) | 65 |
+| Left small knob push | 64 |
+| Right small knob push | 65 |
 | Big knob push | 66 (app may ignore) |
-| Small knob 1 CCW / CW | 67 / 68 (each tick sends a quick on/off) |
-| Small knob 2 CCW / CW | 69 / 70 |
+| Left small knob CCW / CW | 67 / 68 (each tick sends a quick on/off) |
+| Right small knob CCW / CW | 69 / 70 |
 | Big knob turn | Mouse wheel down / up, every layer |
 
 ```
