@@ -13,13 +13,22 @@ DEFAULT = {
 }
 
 PALETTE = {  # keep in sync with static/app.js
-    # the WING's 12 colours (its colour picker, in order 1-12), as LED HSV at full brightness
-    "steel": (154, 172, 200), "sky": (142, 255, 200), "indigo": (182, 255, 200), "teal": (128, 255, 200),
-    "green": (99, 255, 200), "olive": (49, 255, 200), "yellow": (39, 255, 200), "orange": (19, 220, 200),
-    "crimson": (243, 255, 200), "coral": (0, 160, 200), "magenta": (213, 255, 200), "purple": (196, 255, 200),
+    # the WING's 12 colours in its picker order (1-12), tuned for the pad's LEDs: orange = the case/UI amber
+    "steel": (150, 160, 200),
+    "sky": (140, 255, 200),
+    "indigo": (178, 255, 200),
+    "teal": (128, 255, 200),
+    "green": (85, 255, 200),
+    "olive": (55, 255, 200),
+    "yellow": (40, 255, 200),
+    "orange": (22, 255, 200),
+    "red": (0, 255, 200),
+    "coral": (5, 150, 200),
+    "magenta": (213, 255, 200),
+    "purple": (192, 255, 200),
     "white": (0, 0, 200), "off": (0, 0, 0),
     # older names, still accepted
-    "red": (0, 255, 200), "amber": (24, 255, 200), "cyan": (128, 255, 200), "blue": (170, 255, 200),
+    "crimson": (0, 255, 200), "amber": (22, 255, 200), "cyan": (128, 255, 200), "blue": (170, 255, 200),
 }
 
 

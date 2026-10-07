@@ -43,12 +43,12 @@ class Leds:
             return
         target = colour(mapping.get("hold_colour"), FLASH)
         now = time.monotonic()
-        if kind == "confirm":
+        if kind == "confirm":  # 3 flashes, 150 ms on / 150 ms off
             anim = mapping.get("fire_anim", "flash" if mapping.get("trigger") == "hold" else "none")
             if anim == "none":
                 self.fx.pop(idx, None)
                 return
-            dur = 0.45
+            dur = 0.75
             if anim == "burst":
                 self.bursts.append((idx, now, target))
         self.fx[idx] = (kind, now, dur, target)
@@ -92,7 +92,7 @@ class Leds:
                 if e > dur:
                     del self.fx[idx]
                     continue
-                out[idx] = target if int(e / 0.075) % 2 == 0 else OFF
+                out[idx] = target if int(e / 0.15) % 2 == 0 else OFF
         self._draw_bursts(out, now)
         return out
 

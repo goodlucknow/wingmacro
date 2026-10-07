@@ -13,16 +13,25 @@ const S = {
 // WING strip colours, sampled from Wing Edit (2026-10-07). The console palette has 12; 13-18 look reserved and display like 12.
 const WCOL = [null, "#203a64", "#00527f", "#23007f", "#00686a", "#005f1f", "#414c00", "#736b00", "#5e310d",
   "#720020", "#7f2f2f", "#7f007e", "#4f007f", "#4f007f", "#4f007f", "#4f007f", "#4f007f", "#4f007f", "#4f007f"];
-// LED colours: the WING's 12 (its colour picker, 1-12) + white + off, as HSV; `rgb` is how the WING shows them.
-// Keep in sync with config.py. Older names (red, amber, cyan, blue) are still accepted.
+// LED colours: the WING's 12 in its picker order (1-12) + white + off, as LED HSV. Swatches show the LED
+// colour (not the WING's screen shade), tuned on the pad: orange = case/UI amber, red = true red.
+// Keep in sync with config.py. Older names (crimson, amber, cyan, blue) are still accepted.
 const SWATCHES = [
-  ["steel", [154, 172, 200], "#4175c8"], ["sky", [142, 255, 200], "#00a5ff"], ["indigo", [182, 255, 200], "#4700ff"],
-  ["teal", [128, 255, 200], "#00d0d4"], ["green", [99, 255, 200], "#00bf3f"], ["olive", [49, 255, 200], "#829900"],
-  ["yellow", [39, 255, 200], "#e7d600"], ["orange", [19, 220, 200], "#bd631a"], ["crimson", [243, 255, 200], "#e50041"],
-  ["coral", [0, 160, 200], "#ff5f5f"], ["magenta", [213, 255, 200], "#ff00fd"], ["purple", [196, 255, 200], "#9e00ff"],
-  ["white", [0, 0, 200], "#ffffff"], ["off", [0, 0, 0], "#000000"]];
+  ["steel", [150, 160, 200]],
+  ["sky", [140, 255, 200]],
+  ["indigo", [178, 255, 200]],
+  ["teal", [128, 255, 200]],
+  ["green", [85, 255, 200]],
+  ["olive", [55, 255, 200]],
+  ["yellow", [40, 255, 200]],
+  ["orange", [22, 255, 200]],
+  ["red", [0, 255, 200]],
+  ["coral", [5, 150, 200]],
+  ["magenta", [213, 255, 200]],
+  ["purple", [192, 255, 200]],
+  ["white", [0, 0, 200]], ["off", [0, 0, 0]]].map(([n, c]) => [n, c, n === "off" ? "#000" : hsvCss(c)]);
 const PALETTE = { ...Object.fromEntries(SWATCHES.map(([n, c]) => [n, c])),
-  red: [0, 255, 200], amber: [24, 255, 200], cyan: [128, 255, 200], blue: [170, 255, 200] };
+  crimson: [0, 255, 200], amber: [22, 255, 200], cyan: [128, 255, 200], blue: [170, 255, 200] };
 const SWATCH_RGB = Object.fromEntries(SWATCHES.map(([n, , rgb]) => [n, rgb]));
 const KINDS = [["ch", "CH", 40], ["aux", "AUX", 8], ["bus", "BUS", 16], ["main", "MAIN", 4],
   ["mtx", "MTX", 8], ["dca", "DCA", 16]];
@@ -558,11 +567,7 @@ function pickTarget(current, set, chOnly) {
 }
 
 // ---------------------------------------------------------------------------- LED editor
-function previewCss(val, hsv) {               // WING shade for a named colour (dimmed to its brightness), else HSV
-  if (typeof val === "string" && SWATCH_RGB[val]) return SWATCH_RGB[val];
-  const n = hsv && SWATCHES.find(([k, c]) => k !== "off" && c[0] === hsv[0] && c[1] === hsv[1]);
-  return n ? `color-mix(in srgb, ${n[2]} ${Math.round(hsv[2] / 2)}%, #000)` : hsvCss(hsv);
-}
+function previewCss(val, hsv) { return hsvCss(hsv); }   // swatches now show the LED colour itself
 function colourPicker(val, set, { allowNone = false, noneLabel = "Background" } = {}) {
   // Palette swatches + brightness. A palette colour at full brightness is stored by name,
   // anything else as [h, s, v] (v 0..200, the firmware's cap).

@@ -63,7 +63,7 @@ LED feedback for `hold`:
   Set it with `fire_anim`: `none`, `flash`, or `burst` (a flash plus a ring of light spreading out across the pad). Hold keys default to `flash`, all others to `none`.
   Animations use `hold_colour` (default white). The tap-tempo beat flash runs on tap keys.
 - Brightness is the V of an HSV colour (0–200). In the UI, every colour picker has a brightness slider, so a palette colour can be stored at any brightness.
-- Colours are HSV triples (0–255, as in VialRGB) or palette names: the WING's 12 colours in its order (`steel`, `sky`, `indigo`, `teal`, `green`, `olive`, `yellow`, `orange`, `crimson`, `coral`, `magenta`, `purple`), plus `white` and `off`. The older names `red`, `amber`, `cyan` and `blue` are still accepted. The firmware caps brightness at 200.
+- Colours are HSV triples (0–255, as in VialRGB) or palette names: the WING's 12 colours in its order (`steel`, `sky`, `indigo`, `teal`, `green`, `olive`, `yellow`, `orange`, `red`, `coral`, `magenta`, `purple`), plus `white` and `off`, with LED values tuned for the pad (orange = the case/UI amber). The older names `crimson`, `amber`, `cyan` and `blue` are still accepted. The firmware caps brightness at 200.
 - When the layer changes, the app repaints all 16 LEDs with that layer's colours. On exit it restores VialRGB mode 2.
 
 ## Targets
