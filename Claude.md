@@ -61,6 +61,7 @@ CLAUDE.md
 - Lighting is **RGB_MATRIX**, not RGBLIGHT (the old rainbow-stuck bug came from using the wrong one). In `vial.json` set `"lighting": "vialrgb"`; in `rules.mk` set `VIALRGB_ENABLE = yes`. Default effect: solid/off, not rainbow.
 - Previous build used 4 layers (`"layers": 4` inside the `"vial"` object of `vial.json`) and `"midi": "advanced"`.
 - Big encoder → mouse wheel up/down on **every** layer.
+- Small encoders: each turn direction sends its own MIDI note, and each encoder's push switch sends its own note too, with both press and release. The app handles push-and-turn, so don't use momentary layer keys on the pushes for this.
 - Bootloader: reset button on the back of the PCB, or hold key (0,0) while plugging in, or a `QK_BOOT` key.
 - Check whether vial-qmk already ships a `vial` keymap for doio/kb16/rev2; if not, port from upstream QMK's `via` keymap.
 
@@ -101,7 +102,11 @@ CLAUDE.md
 
 ## Features (from the previous app — rebuild these)
 
-- Per layer: 8 buttons and 4 rotaries. **Open question**: the KB16 has 16 keys and 3 encoders. How did 4 rotaries map onto it — key pairs as inc/dec, the small encoders plus layers, or something else? Settle this in `docs/pad-map.md` before building.
+- Per layer: 8 buttons and 4 rotaries.
+  - The 4 rotaries are the **2 small encoders × 2 functions**: turning alone gives the primary function, and **turning while the knob is pushed in** gives the secondary function.
+  - Handle push-and-turn **in the app, not the firmware**. Each encoder push sends a note-on when pressed and a note-off when released. The app tracks whether the push is held and routes turn ticks to the primary or secondary function. This keeps the Vial keymap stock and remappable.
+  - A push with no turn can optionally act as its own button action. Decide this in the pad map.
+  - Still open: what the 8 keys beyond the 8 buttons do (layer select, tap tempo, spare?). Settle this in `docs/pad-map.md`.
 - Button functions:
   - hard mute
   - soft mute, with a fade time
@@ -115,7 +120,7 @@ CLAUDE.md
 
 ## Open items / next priorities
 
-1. Agree the pad map (`docs/pad-map.md`) — layers, notes, LED indices, the 4-rotary question.
+1. Agree the pad map (`docs/pad-map.md`). It covers layers, notes, LED indices, the encoder push notes, and the use of the remaining 8 keys.
 2. Vial keymap: VialRGB direct mode, big knob = wheel, MIDI notes elsewhere. Flash and verify in the Vial editor.
 3. App skeleton: OSC client + discovery/manual IP, MIDI in, raw HID LED out, web config UI, config file.
 4. Port the WING logic above (fader floor, soft mutes, mute groups, tap tempo).
