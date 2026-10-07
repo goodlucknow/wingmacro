@@ -150,3 +150,11 @@ def test_led_actions_digico_style():
         eng.release(2, 1); await asyncio.sleep(0.01)
         assert (0, 1) not in ctx.led_state and ctx.led_state[(0, 0)] == ("red", "solid")
     asyncio.run(go())
+
+
+def test_vial_macro_roundtrip():
+    from wingmacro import vialmacro as V
+    macros = [[{"text": "hi"}, {"tap": [0x3A, 0x0104]}, {"delay": 600}, {"down": [0xE0]}, {"tap": [0x7E00]}, {"up": [0xE0]}], [], [{"text": "x"}]]
+    buf = V.encode(macros)
+    assert 0 not in buf[:buf.index(0)]  # no stray terminators inside macro 0
+    assert V.decode(buf + b"\0" * 20, 4) == macros + [[]]

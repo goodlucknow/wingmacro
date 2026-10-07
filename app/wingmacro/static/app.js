@@ -779,31 +779,183 @@ function kmEditor() {
     info.raw === 1 && h("span", { class: "muted" }, `Transparent: uses ${KC.name(info.eff)} from a lower layer`),
     KC.isWM(info.raw) && h("span", { class: "muted" }, "WM key: what it does is set on the Pad page"),
     info.raw === 0 && h("span", { class: "muted" }, "Does nothing"));
-  const used = wmUsedOnLayer(S.layer);
+  return [h("div", { class: "phead" }, `${title} · LAYER ${S.layer + 1}`),
+    h("div", { class: "pbody" },
+      slotBtns, cur,
+      S.kmErr && h("p", { style: "color:var(--red)" }, S.kmErr),
+      kcPicker(info.raw, (v) => setKc(info, v), { used: wmUsedOnLayer(S.layer), redraw: render }))];
+}
+
+// Keycode picker: tabs of keycodes, modifier combos, raw hex. Used inline and in a modal.
+function kcPicker(current, onPick, { used = new Set(), redraw = render } = {}) {
   const tab = S.kmTab;
   const group = KC.groups.find((g) => g[0] === tab) || KC.groups[0];
   const modable = (kc) => kc >= 0x04 && kc <= 0x73;
   const withMods = (kc) => (S.kmMods && modable(kc) ? (S.kmMods << 8) | kc : kc);
   const grid = h("div", { class: "kcgrid" }, group[1].map((kc) => {
     const v = withMods(kc);
-    return h("button", { class: "kc" + (v === info.raw ? " on" : "") + (KC.isWM(kc) ? " wmk" : "") + (KC.isWM(kc) && used.has(kc) ? " used" : ""),
-      title: KC.isWM(kc) && used.has(kc) ? "Already used on this layer" : "", onclick: () => setKc(info, v) }, KC.name(v));
+    return h("button", { class: "kc" + (v === current ? " on" : "") + (KC.isWM(kc) ? " wmk" : "") + (KC.isWM(kc) && used.has(kc) ? " used" : ""),
+      title: KC.isWM(kc) && used.has(kc) ? "Already used on this layer" : "", onclick: () => onPick(v) }, KC.name(v));
   }));
   const modsRow = ["LETTERS", "F-KEYS", "EDIT / NAV", "NUMPAD"].includes(tab) && h("div", { class: "row", style: "margin-bottom:8px;gap:6px;align-items:center" },
     h("span", { class: "muted", style: "font-size:12px;text-transform:uppercase" }, "With"),
-    KC.MODS.map(([b, n]) => h("button", { class: "btn sm" + (S.kmMods & b ? " amber" : ""), onclick: () => { S.kmMods ^= b; render(); } }, n)),
-    h("button", { class: "btn sm" + (S.kmMods & 0x10 ? " amber" : ""), onclick: () => { S.kmMods ^= 0x10; render(); } }, "Right"));
+    KC.MODS.map(([b, n]) => h("button", { class: "btn sm" + (S.kmMods & b ? " amber" : ""), onclick: () => { S.kmMods ^= b; redraw(); } }, n)),
+    h("button", { class: "btn sm" + (S.kmMods & 0x10 ? " amber" : ""), onclick: () => { S.kmMods ^= 0x10; redraw(); } }, "Right"));
   const hex = h("input", { type: "text", placeholder: "0x7E00", style: "width:90px" });
-  return [h("div", { class: "phead" }, `${title} · LAYER ${S.layer + 1}`),
+  return h("div", {},
+    h("div", { class: "tabs kmtabs" }, KC.groups.map(([g]) => h("button", { class: g === tab ? "on" : "", onclick: () => { S.kmTab = g; redraw(); } }, g))),
+    h("div", { style: "padding-top:10px" }, modsRow, grid),
+    tab === "WINGMACRO" && h("p", { class: "hint" }, "Amber dot = already used on this layer. WM keys do nothing on their own: map them on the Pad page."),
+    tab === "KEY MACROS" && h("p", { class: "hint" }, "Keystroke macros stored on the pad: edit them on the Key macros tab."),
+    tab === "TAP DANCE" && h("p", { class: "hint" }, "Tap-dance entries: edit them on the Tap dance tab."),
+    h("div", { class: "row", style: "margin-top:12px;align-items:center" }, h("span", { class: "muted", style: "font-size:12px;text-transform:uppercase" }, "Any keycode"), hex,
+      h("button", { class: "btn sm", onclick: () => { const v = parseInt(hex.value, 16); if (!isNaN(v)) onPick(v); } }, "Set")));
+}
+function pickKeycode(current, onPick) {
+  const m = $("modal");
+  const close = () => { m.hidden = true; m.replaceChildren(); };
+  const draw = () => m.replaceChildren(h("div", { class: "dialog", onclick: (e) => e.stopPropagation() },
+    h("div", { class: "phead" }, "SELECT KEYCODE", h("div", { class: "right" },
+      h("button", { class: "btn sm", onclick: () => { onPick(0); close(); } }, "Clear"), h("button", { class: "btn sm", onclick: close }, "Close"))),
+    h("div", { class: "pbody" }, kcPicker(current, (v) => { onPick(v); close(); }, { redraw: draw }))));
+  m.onclick = close; draw(); m.hidden = false;
+}
+function kcSlot(label, kc, onPick) {
+  return field(label, h("button", { class: "target" + (kc ? "" : " unset"), onclick: () => pickKeycode(kc, onPick) },
+    h("span", { class: "tn" + (KC.isWM(kc) ? " wm" : "") }, kc ? KC.name(kc) : "—")));
+}
+
+// ---------------------------------------------------------------------------- Vial extras: key macros, tap dance, combos
+async function loadVial(reload) {
+  S.vial = await api("/api/vial" + (reload ? "?reload=1" : "")).catch(() => ({ connected: false }));
+  if (S.vial.connected && (!S.vialDraft || reload)) S.vialDraft = clone(S.vial.macros);
+  render();
+}
+async function vialPost(kind, body) {
+  S.kmErr = "";
+  const r = await api("/api/vial/" + kind, { method: "POST", body: JSON.stringify(body) }).catch((e) => ({ ok: false, error: String(e) }));
+  if (!r.ok) S.kmErr = r.error;
+  return r.ok;
+}
+function lockChip() {
+  const u = S.vial?.unlock || {};
+  return h("div", { class: "row", style: "gap:6px;align-items:center" },
+    h("span", { class: "chip" }, h("i", { class: "dot" + (u.unlocked ? " on" : "") }), u.unlocked ? "Unlocked" : "Locked"),
+    u.unlocked ? h("button", { class: "btn sm", onclick: async () => { await vialPost("lock", {}); loadVial(); } }, "Lock")
+      : h("button", { class: "btn sm light", onclick: startUnlock }, "Unlock…"));
+}
+async function startUnlock() {
+  if (!(await vialPost("unlock", {}))) { render(); return; }
+  const keys = (S.vial?.unlock?.keys || []).map(([r, c]) => (c < 4 && r < 4 ? `key ${r * 4 + c + 1}` : `row ${r} col ${c}`));
+  const m = $("modal");
+  const bar = h("div", { class: "progress" }, h("i"));
+  const msg = h("p", {}, `Hold ${keys.join(" and ")} together until the bar fills (about 5 seconds).`);
+  m.replaceChildren(h("div", { class: "dialog", style: "max-width:480px" }, h("div", { class: "phead" }, "UNLOCK PAD"),
+    h("div", { class: "pbody" }, msg, bar, h("p", { class: "hint" }, "Vial requires this before keystroke macros can be changed. It stays unlocked until you lock it or unplug the pad."))));
+  m.onclick = null; m.hidden = false;
+  const t0 = Date.now();
+  while (Date.now() - t0 < 32000) {
+    await new Promise((r) => setTimeout(r, 150));
+    const u = await api("/api/vial/unlock").catch(() => ({}));
+    bar.firstChild.style.width = `${Math.round((1 - (u.counter ?? 50) / 50) * 100)}%`;
+    if (u.unlocked) { msg.textContent = "Unlocked."; break; }
+    if (!u.in_progress && Date.now() - t0 > 1000) { msg.textContent = "Unlock didn't complete. Try again."; break; }
+  }
+  setTimeout(() => { m.hidden = true; m.replaceChildren(); loadVial(); }, 700);
+}
+
+function macroSummary(actions) {
+  if (!actions?.length) return "—";
+  return actions.map((a) => a.text != null ? `"${a.text}"` : a.delay != null ? `${a.delay}ms`
+    : Object.entries(a).map(([k, v]) => (k === "tap" ? "" : k + " ") + v.map(KC.name).join("+")).join("")).join(" · ");
+}
+function renderKeyMacros() {
+  const v = S.vial, draft = S.vialDraft || [];
+  const i = S.vialSel ?? 0, acts = draft[i] || [];
+  const dirty = JSON.stringify(draft) !== JSON.stringify(v.macros);
+  const list = h("table", { class: "grid" }, h("thead", {}, h("tr", {}, h("th", {}, "Macro"), h("th", {}, "Actions"))),
+    h("tbody", {}, draft.map((m, n) => h("tr", { class: n === i ? "sel" : "", onclick: () => { S.vialSel = n; render(); } },
+      h("td", { style: "white-space:nowrap" }, `M${n}`), h("td", { class: "muted" }, macroSummary(m))))));
+  const row = (a, n) => {
+    const kind = a.text != null ? "text" : a.delay != null ? "delay" : Object.keys(a)[0];
+    let val;
+    if (kind === "text") val = h("input", { type: "text", value: a.text, style: "flex:1;min-width:160px", oninput: (e) => { a.text = e.target.value; } , onchange: () => render() });
+    else if (kind === "delay") val = h("span", {}, h("input", { type: "number", value: a.delay, min: 0, step: 10, oninput: (e) => { a.delay = +e.target.value || 0; } }), h("span", { class: "unit" }, "ms"));
+    else val = h("div", { class: "row", style: "gap:4px" }, a[kind].map((kc, k) => h("button", { class: "target", onclick: () => pickKeycode(kc, (nv) => { if (nv) a[kind][k] = nv; else a[kind].splice(k, 1); render(); }) },
+      h("span", { class: "tn" }, KC.name(kc)))), h("button", { class: "btn sm", onclick: () => pickKeycode(0, (nv) => { if (nv) { a[kind].push(nv); render(); } }) }, "+ Key"));
+    return h("div", { class: "step" + (kind === "delay" ? " wait" : "") }, h("div", { class: "no" }, n + 1),
+      h("div", {}, h("div", { class: "row", style: "align-items:center" },
+        h("select", { onchange: (e) => { const k = e.target.value; acts[n] = k === "text" ? { text: "" } : k === "delay" ? { delay: 100 } : { [k]: kind === "text" || kind === "delay" ? [] : a[kind] }; render(); } },
+          [["text", "Type text"], ["tap", "Tap keys"], ["down", "Press (down)"], ["up", "Release (up)"], ["delay", "Delay"]].map(([k, l]) => h("option", { value: k, selected: k === kind }, l))), val)),
+      h("div", { class: "row", style: "gap:4px;flex-wrap:nowrap" },
+        iconBtn("up", () => { if (n) { [acts[n - 1], acts[n]] = [acts[n], acts[n - 1]]; render(); } }, "Move up"),
+        iconBtn("down", () => { if (n < acts.length - 1) { [acts[n + 1], acts[n]] = [acts[n], acts[n + 1]]; render(); } }, "Move down"),
+        iconBtn("x", () => { acts.splice(n, 1); render(); }, "Remove")));
+  };
+  const unlocked = v.unlock?.unlocked;
+  const editor = [h("div", { class: "phead" }, `KEY MACRO M${i}`),
     h("div", { class: "pbody" },
-      slotBtns, cur,
-      S.kmErr && h("p", { style: "color:var(--red)" }, S.kmErr),
-      h("div", { class: "tabs kmtabs" }, KC.groups.map(([g]) => h("button", { class: g === tab ? "on" : "", onclick: () => { S.kmTab = g; render(); } }, g))),
-      h("div", { style: "padding-top:10px" }, modsRow, grid),
-      tab === "WINGMACRO" && h("p", { class: "hint" }, "Amber dot = already used on this layer. WM keys do nothing on their own: map them on the Pad page."),
-      h("div", { class: "row", style: "margin-top:12px;align-items:center" }, h("span", { class: "muted", style: "font-size:12px;text-transform:uppercase" }, "Any keycode"), hex,
-        h("button", { class: "btn sm", onclick: () => { const v = parseInt(hex.value, 16); if (!isNaN(v)) setKc(info, v); } }, "Set")),
-      h("p", { class: "hint" }, "Vial's own macros, tap dance, combos and the bootloader key still need Vial (with the app stopped)."))];
+      h("p", { class: "hint", style: "margin-top:0" }, `Typed by the pad on the computer it's plugged into (e.g. Wing Edit shortcuts). Assign M${i} to a key on the Keymap tab.`),
+      h("div", { class: "steps" }, acts.length ? acts.map(row) : h("div", { class: "hint" }, "Empty.")),
+      h("div", { class: "addrow" }, [["text", "+ Text"], ["tap", "+ Tap keys"], ["down", "+ Press"], ["up", "+ Release"], ["delay", "+ Delay"]].map(([k, l]) =>
+        h("button", { class: "btn sm", onclick: () => { (draft[i] ||= []).push(k === "text" ? { text: "" } : k === "delay" ? { delay: 100 } : { [k]: [] }); render(); } }, l))),
+      h("div", { class: "row", style: "margin-top:16px;align-items:center" },
+        h("button", { class: "btn amber", disabled: !dirty || !unlocked, onclick: async () => {
+          if (await vialPost("macros", { macros: S.vialDraft })) await loadVial(true); else render(); } }, "Save to pad"),
+        dirty && h("button", { class: "btn ghost", onclick: () => { S.vialDraft = clone(v.macros); render(); } }, "Discard changes"),
+        dirty && h("span", { style: "color:var(--amber)" }, "Unsaved changes"),
+        !unlocked && h("span", { class: "muted" }, "Unlock the pad to save macros.")),
+      S.kmErr && h("p", { style: "color:var(--red)" }, S.kmErr))];
+  return h("div", { class: "cols", style: "grid-template-columns:minmax(280px,420px) 1fr" },
+    panel("KEY MACROS", list, { bodyCls: "scroll", right: h("span", { class: "muted", style: "font-size:12px" }, `${v.macro_used} / ${v.macro_size} bytes`) }),
+    h("section", { class: "panel" }, editor));
+}
+function renderTapDance() {
+  const v = S.vial, i = S.vialSel ?? 0;
+  const td = v.tap_dance[i];
+  const set = async (k, val) => { const nt = { ...td, [k]: val }; if (await vialPost("tap_dance", { idx: i, ...nt })) v.tap_dance[i] = nt; render(); };
+  const sum = (t) => [t.tap, t.hold, t.double_tap, t.tap_hold].some(Boolean)
+    ? [["tap", t.tap], ["hold", t.hold], ["2×", t.double_tap], ["tap+hold", t.tap_hold]].filter(([, k]) => k).map(([l, k]) => `${l} ${KC.name(k)}`).join(" · ") : "—";
+  const list = h("table", { class: "grid" }, h("thead", {}, h("tr", {}, h("th", {}, "Entry"), h("th", {}, "Actions"))),
+    h("tbody", {}, v.tap_dance.map((t, n) => h("tr", { class: n === i ? "sel" : "", onclick: () => { S.vialSel = n; render(); } },
+      h("td", { style: "white-space:nowrap" }, `TD(${n})`), h("td", { class: "muted" }, sum(t))))));
+  const editor = [h("div", { class: "phead" }, `TAP DANCE TD(${i})`), h("div", { class: "pbody" },
+    h("p", { class: "hint", style: "margin-top:0" }, `One key, different keycodes for tap, hold, double tap and tap-then-hold. Assign TD(${i}) to a key on the Keymap tab. Saves to the pad immediately.`),
+    h("div", { class: "row" }, kcSlot("On tap", td.tap, (k) => set("tap", k)), kcSlot("On hold", td.hold, (k) => set("hold", k)),
+      kcSlot("On double tap", td.double_tap, (k) => set("double_tap", k)), kcSlot("On tap + hold", td.tap_hold, (k) => set("tap_hold", k))),
+    h("div", { style: "height:12px" }),
+    field("Tapping term", h("span", {}, h("input", { type: "number", value: td.term, min: 50, step: 10, onchange: (e) => set("term", +e.target.value || 200) }), h("span", { class: "unit" }, "ms"))),
+    S.kmErr && h("p", { style: "color:var(--red)" }, S.kmErr))];
+  return h("div", { class: "cols", style: "grid-template-columns:minmax(280px,420px) 1fr" }, panel("TAP DANCE", list, { bodyCls: "scroll" }), h("section", { class: "panel" }, editor));
+}
+function renderCombos() {
+  const v = S.vial, i = S.vialSel ?? 0;
+  const c = v.combos[i];
+  const save = async (nc) => { if (await vialPost("combo", { idx: i, ...nc })) v.combos[i] = nc; render(); };
+  const sum = (x) => x.output ? `${x.inputs.filter(Boolean).map(KC.name).join(" + ")} → ${KC.name(x.output)}` : "—";
+  const list = h("table", { class: "grid" }, h("thead", {}, h("tr", {}, h("th", {}, "Combo"), h("th", {}, "Keys → result"))),
+    h("tbody", {}, v.combos.map((x, n) => h("tr", { class: n === i ? "sel" : "", onclick: () => { S.vialSel = n; render(); } },
+      h("td", {}, `${n}`), h("td", { class: "muted" }, sum(x))))));
+  const editor = [h("div", { class: "phead" }, `COMBO ${i}`), h("div", { class: "pbody" },
+    h("p", { class: "hint", style: "margin-top:0" }, "Press these keycodes together to send the result instead. Matches keycodes, not key positions. Saves to the pad immediately."),
+    h("div", { class: "row" }, [0, 1, 2, 3].map((k) => kcSlot(`Key ${k + 1}`, c.inputs[k], (nv) => { const inp = [...c.inputs]; inp[k] = nv; save({ ...c, inputs: inp }); }))),
+    h("div", { style: "height:12px" }),
+    kcSlot("Result", c.output, (nv) => save({ ...c, output: nv })),
+    S.kmErr && h("p", { style: "color:var(--red)" }, S.kmErr))];
+  return h("div", { class: "cols", style: "grid-template-columns:minmax(280px,420px) 1fr" }, panel("COMBOS", list, { bodyCls: "scroll" }), h("section", { class: "panel" }, editor));
+}
+function renderKeymapPage() {
+  const views = [["keymap", "Keymap"], ["macros", "Key macros"], ["tapdance", "Tap dance"], ["combos", "Combos"]];
+  const view = S.kmView || "keymap";
+  let body;
+  if (view === "keymap") body = renderKeymap();
+  else if (!S.vial) { loadVial(); body = h("div", { class: "editor-empty" }, "Reading the pad…"); }
+  else if (!S.vial.connected) body = h("div", { class: "editor-empty" }, "Pad not connected");
+  else body = { macros: renderKeyMacros, tapdance: renderTapDance, combos: renderCombos }[view]();
+  return h("div", { class: "kmpage" },
+    h("div", { class: "tabs pagetabs" }, views.map(([k, l]) => h("button", { class: view === k ? "on" : "", onclick: () => { S.kmView = k; S.vialSel = 0; S.kmErr = ""; render(); } }, l)),
+      view !== "keymap" && S.vial?.connected && h("div", { class: "tabright" }, lockChip(), h("button", { class: "btn sm ghost", onclick: () => loadVial(true) }, "Re-read pad"))),
+    body);
 }
 
 // ---------------------------------------------------------------------------- render / nav
@@ -811,7 +963,7 @@ function render() {
   const page = $("page");
   const keepScroll = [...page.querySelectorAll(".pbody")].map((e) => e.scrollTop);
   const pageScroll = page.scrollTop;
-  page.replaceChildren(({ pad: renderPad, macros: renderMacros, console: renderConsole, settings: renderSettings, keymap: renderKeymap })[S.page]());
+  page.replaceChildren(({ pad: renderPad, macros: renderMacros, console: renderConsole, settings: renderSettings, keymap: renderKeymapPage })[S.page]());
   page.querySelectorAll(".pbody").forEach((e, i) => { e.scrollTop = keepScroll[i] || 0; });
   page.scrollTop = pageScroll;
   document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.page === S.page));
@@ -821,7 +973,9 @@ function render() {
   history.replaceState(null, "", `#${S.page}${sel}`);
 }
 function fromHash() {                       // #pad/2/5 = layer 2, key 5; #pad/1/left; #macros
-  const [page, layer, ctl] = location.hash.slice(1).split("/");
+  const [pageView, layer, ctl] = location.hash.slice(1).split("/");
+  const [page, view] = pageView.split(":");               // e.g. #keymap:tapdance
+  if (view) S.kmView = view;
   if (["pad", "macros", "console", "settings", "keymap"].includes(page)) S.page = page;
   if (layer) S.layer = +layer - 1;          // Follow pad stays on; the live layer wins once known
   if (ctl) S.sel = /^\d+$/.test(ctl) ? { kind: "key", idx: +ctl - 1 } : { kind: "knob", knob: ctl };

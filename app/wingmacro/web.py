@@ -74,6 +74,28 @@ async def start_web(app, host, port):
             return web.json_response({"ok": False, "error": str(e)}, status=400)
         return web.json_response({"ok": True})
 
+    async def vial_get(req):
+        try:
+            return web.json_response(await app.vial_state(reload=req.query.get("reload") == "1"))
+        except (ValueError, OSError) as e:
+            return web.json_response({"connected": False, "error": str(e)})
+
+    async def vial_status(_):
+        return web.json_response(app.unlock)
+
+    def vial_action(fn):
+        async def handler(req):
+            try:
+                await fn(req)
+            except (ValueError, KeyError, TypeError, OSError) as e:
+                return web.json_response({"ok": False, "error": str(e)}, status=400)
+            return web.json_response({"ok": True})
+        return handler
+
+    async def _unlock(_): await app.vial_unlock()
+    async def _lock(_): await app.vial_lock()
+    async def _set(req): await app.vial_set(req.match_info["kind"], await req.json())
+
     async def ws(req):
         """Pushes status, LED preview and new pad events about 10x a second."""
         sock = web.WebSocketResponse(heartbeat=20)
@@ -111,6 +133,9 @@ async def start_web(app, host, port):
         web.get("/api/fx", fx_list), web.get("/api/fx/{slot}", fx_params),
         web.get("/api/scan", scan), web.post("/api/console", set_console),
         web.get("/api/keymap", keymap), web.post("/api/keymap", set_keycode),
+        web.get("/api/vial", vial_get), web.get("/api/vial/unlock", vial_status),
+        web.post("/api/vial/unlock", vial_action(_unlock)), web.post("/api/vial/lock", vial_action(_lock)),
+        web.post("/api/vial/{kind}", vial_action(_set)),
     ])
     runner = web.AppRunner(wa, access_log=None)
     await runner.setup()

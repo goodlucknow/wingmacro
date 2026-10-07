@@ -10,6 +10,7 @@ from .leds import Leds
 from .pad import Pad
 from .web import start_web
 from .wing import Wing
+from . import vialmacro
 
 log = logging.getLogger("wingmacro")
 
@@ -28,6 +29,8 @@ class App:
         self.engine = Engine(lambda: self.cfg, self.ctx, self.leds)
         if self.leds:
             self.leds.engine = self.engine
+        self.vial = None  # cached Vial extras read from the pad
+        self.unlock = {"unlocked": False, "in_progress": False, "counter": 0}
         self.wing.on_connect.append(self._on_wing_connect)
         self.wing.listeners.append(self._on_wing_change)
 
@@ -75,6 +78,78 @@ class App:
         else:
             await loop.run_in_executor(None, p.set_key, int(body["layer"]), int(body["row"]), int(body["col"]), kc)
 
+    # --- Vial extras (unlock, keystroke macros, tap dance, combos) ------------------
+
+    async def _pad_call(self, fn, *a):
+        if not (self.pad and self.pad.connected):
+            raise ValueError("pad not connected")
+        return await asyncio.get_running_loop().run_in_executor(None, fn, *a)
+
+    async def vial_state(self, reload=False):
+        p = self.pad
+        if not (p and p.connected):
+            self.vial = None
+            return {"connected": False}
+        if self.vial is None or reload:
+            def read():
+                counts = p.entry_counts()
+                mcount, msize = p.macro_info()
+                buf = p.get_macro_buffer()
+                return {
+                    "tap_dance": [p.get_tap_dance(i) for i in range(counts["tap_dance"])],
+                    "combos": [p.get_combo(i) for i in range(counts["combos"])],
+                    "macros": vialmacro.decode(buf, mcount), "macro_size": msize,
+                }
+            self.vial = await self._pad_call(read)
+            st = await self._pad_call(p.unlock_status)
+            self.unlock.update(unlocked=st["unlocked"], keys=st["keys"])
+        used = len(vialmacro.encode(self.vial["macros"]))
+        return dict(self.vial, connected=True, macro_used=used, unlock=self.unlock)
+
+    async def vial_unlock(self):
+        """Start Vial's unlock: the user holds the unlock keys; we poll until done (or 30 s)."""
+        p = self.pad
+        await self._pad_call(p.unlock_start)
+        self.unlock.update(in_progress=True, counter=50)
+
+        async def poll():
+            t0 = asyncio.get_running_loop().time()
+            try:
+                while asyncio.get_running_loop().time() - t0 < 30:
+                    st = await self._pad_call(p.unlock_poll)
+                    self.unlock.update(st)
+                    if st["unlocked"] or not st["in_progress"]:
+                        break
+                    await asyncio.sleep(0.12)
+            except (ValueError, OSError) as e:
+                log.warning("unlock: %s", e)
+            self.unlock["in_progress"] = False
+        asyncio.create_task(poll())
+
+    async def vial_lock(self):
+        await self._pad_call(self.pad.lock)
+        self.unlock.update(unlocked=False, in_progress=False)
+
+    async def vial_set(self, kind, body):
+        p = self.pad
+        if self.vial is None:
+            await self.vial_state()
+        if kind == "tap_dance":
+            idx, td = int(body["idx"]), {k: int(body[k]) & 0xFFFF for k in ("tap", "hold", "double_tap", "tap_hold", "term")}
+            await self._pad_call(p.set_tap_dance, idx, td)
+            self.vial["tap_dance"][idx] = td
+        elif kind == "combo":
+            idx = int(body["idx"])
+            combo = {"inputs": [int(x) & 0xFFFF for x in body["inputs"]][:4], "output": int(body["output"]) & 0xFFFF}
+            await self._pad_call(p.set_combo, idx, combo)
+            self.vial["combos"][idx] = dict(combo, inputs=(combo["inputs"] + [0, 0, 0, 0])[:4])
+        elif kind == "macros":
+            if not self.unlock.get("unlocked"):
+                raise ValueError("unlock the pad first (Vial only allows macro changes when unlocked)")
+            macros = body["macros"]
+            await self._pad_call(p.set_macro_buffer, vialmacro.encode(macros))
+            self.vial["macros"] = macros
+
     async def set_console(self, ip):
         cfg = dict(self.cfg, console=dict(self.cfg.get("console", {}), ip=ip or ""))
         C.save(self.cfg_path, cfg)
@@ -90,6 +165,9 @@ class App:
     async def _pad_events(self):
         while True:
             ev = await self.pad.events.get()
+            if ev["type"] in ("connected", "disconnected"):
+                self.vial = None
+                self.unlock.update(unlocked=False, in_progress=False)
             try:
                 await self.engine.handle(ev)
             except Exception:

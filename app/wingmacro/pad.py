@@ -5,6 +5,7 @@ works in the IncusOS container (USB passthrough, no hidraw nodes), claiming inte
 """
 import asyncio
 import logging
+import struct
 import threading
 import time
 
@@ -220,6 +221,70 @@ class Pad:
     def set_encoder(self, layer, idx, clockwise, kc):
         self.cmd(0xFE, 0x04, layer, idx, int(bool(clockwise)), kc >> 8, kc & 0xFF, match=False)
         self.encmap[layer][idx][int(bool(clockwise))] = kc
+
+    # --- Vial extras: unlock, keystroke macros, tap dance, combos ------------------
+    # Formats from vial-qmk quantum/vial.{c,h}, via.c, dynamic_keymap.c. Replies to Vial (FE ..)
+    # gets overwrite the header, hence match=False.
+
+    def unlock_status(self):
+        r = self.cmd(0xFE, 0x05, match=False)
+        keys = [(r[i], r[i + 1]) for i in range(2, 30, 2) if r[i] != 0xFF]
+        return {"unlocked": bool(r[0]), "in_progress": bool(r[1]), "keys": keys}
+
+    def unlock_start(self):
+        self.cmd(0xFE, 0x06)
+
+    def unlock_poll(self):
+        r = self.cmd(0xFE, 0x07, match=False)
+        return {"unlocked": bool(r[0]), "in_progress": bool(r[1]), "counter": r[2]}
+
+    def lock(self):
+        self.cmd(0xFE, 0x08)
+
+    def entry_counts(self):
+        r = self.cmd(0xFE, 0x0D, 0x00, match=False)
+        return {"tap_dance": r[0], "combos": r[1]}
+
+    def get_tap_dance(self, idx):
+        r = self.cmd(0xFE, 0x0D, 0x01, idx, match=False)
+        tap, hold, dtap, taphold, term = struct.unpack("<5H", r[1:11])
+        return {"tap": tap, "hold": hold, "double_tap": dtap, "tap_hold": taphold, "term": term}
+
+    def set_tap_dance(self, idx, td):
+        data = struct.pack("<5H", td["tap"], td["hold"], td["double_tap"], td["tap_hold"], td["term"])
+        self.cmd(0xFE, 0x0D, 0x02, idx, *data, match=False)
+
+    def get_combo(self, idx):
+        r = self.cmd(0xFE, 0x0D, 0x03, idx, match=False)
+        *inputs, output = struct.unpack("<5H", r[1:11])
+        return {"inputs": inputs, "output": output}
+
+    def set_combo(self, idx, combo):
+        inputs = (list(combo["inputs"]) + [0, 0, 0, 0])[:4]
+        self.cmd(0xFE, 0x0D, 0x04, idx, *struct.pack("<5H", *inputs, combo["output"]), match=False)
+
+    def macro_info(self):
+        count = self.cmd(0x0C)[1]
+        r = self.cmd(0x0D)
+        return count, (r[1] << 8) | r[2]
+
+    def get_macro_buffer(self):
+        _, size = self.macro_info()
+        buf = b""
+        while len(buf) < size:
+            n = min(28, size - len(buf))
+            buf += self.cmd(0x0E, len(buf) >> 8, len(buf) & 0xFF, n)[4:4 + n]
+        return buf
+
+    def set_macro_buffer(self, data):
+        """Write the whole macro buffer (needs the pad unlocked). Zero-padded to the full size."""
+        _, size = self.macro_info()
+        if len(data) > size:
+            raise PadError(f"macros need {len(data)} bytes; the pad has {size}")
+        data = data.ljust(size, b"\0")
+        for off in range(0, size, 28):
+            chunk = data[off:off + 28]
+            self.cmd(0x0F, off >> 8, off & 0xFF, len(chunk), *chunk)
 
     # --- keymap helpers ---------------------------------------------------
 

@@ -135,7 +135,7 @@ CLAUDE.md
 3. Full mapping UI in the browser, styled after the official WING apps (no Behringer logos/names). Pad view with layer tabs → control editor (trigger, action list, LED rule) with console-fed pickers; macro library; settings. Waiting on Wing Edit screenshots from the user for the look.
    - Config is per-machine; the UI gets import/export to move configs between hosts (decided 2026-10-07).
    - Run model (decided 2026-10-07): background service + browser UI, no launchable app. Linux: systemd, UI open on the LAN (no auth for now). Windows/macOS: login autostart + tray/menu-bar icon (Open UI / Quit / status), localhost UI, PyInstaller packaging.
-3b. ~~Keymap editor (Vial replacement)~~: done 2026-10-07, Keymap page; WM and ordinary keycodes, knob turns/pushes, writes verified on the pad.
+3b. ~~Keymap editor (Vial replacement)~~: done 2026-10-07, Keymap page; WM and ordinary keycodes, knob turns/pushes, Vial keystroke macros (with unlock), tap dance, combos. Key/encoder/tap-dance/combo writes verified on the pad; macro save + unlock still to be tried by the user. No QK_BOOT by design.
 4. Test on hardware with real presses: LED feel (hold progress, armed flash), acceleration curves, tap tempo on a delay slot, gain.
 7. Rewrite `platform/windows/scroll-accel.ahk`. The original was lost. Consider scoping it to the Wing Edit window (`#HotIf WinActive(...)`) so other mice aren't affected.
 8. Packaging/autostart for each host: Windows startup task, macOS launchd, Linux systemd.

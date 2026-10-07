@@ -38,6 +38,8 @@ const KC = (() => {
       return MODS.filter(([b]) => m & b).map(([, n]) => right + n).join("+") + "+" + (basic[kc & 0xff] || "?");
     }
     if (kc === 0x7c00) return "Boot";
+    if (kc >= 0x7700 && kc < 0x7720) return "M" + (kc - 0x7700);
+    if (kc >= 0x5700 && kc < 0x5720) return `TD(${kc - 0x5700})`;
     return "0x" + kc.toString(16).padStart(4, "0");
   }
   const isWM = (kc) => kc >= WM0 && kc < WM0 + 32;
@@ -53,6 +55,8 @@ const KC = (() => {
     ["MOUSE", [...range(0xd9, 0xdc), ...range(0xd1, 0xd5), ...range(0xcd, 0xd0)]],
     ["LAYERS", [0x5200, 0x5201, 0x5202, 0x5203, 0x5220, 0x5221, 0x5222, 0x5223, 0x5260, 0x5261, 0x5262, 0x5263,
       0x5280, 0x5281, 0x5282, 0x5283, 0x52c0, 0x52c1, 0x52c2, 0x52c3]],
+    ["KEY MACROS", range(0x7700, 0x770f)],
+    ["TAP DANCE", range(0x5700, 0x571f)],
     ["SPECIAL", [1, 0]],
   ];
   return { name, isWM, groups, MODS, WM0 };

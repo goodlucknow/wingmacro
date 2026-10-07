@@ -76,8 +76,8 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .pbody { padding: 12px; overflow: auto; min-height: 0; }
 .scroll { overflow: auto; }
 .tabs { display: flex; background: #000; border-bottom: 1px solid var(--line); }
-.tabs button { flex: 0 0 auto; min-width: 110px; padding: 9px 18px; background: var(--panel-2); border: 0; border-top: 3px solid transparent; margin-right: 2px; cursor: pointer; text-transform: uppercase; font-size: 16px; color: var(--text); }
-.tabs button.on { color: var(--amber); border-top-color: var(--amber); background: var(--panel); }
+.tabs > button { flex: 0 0 auto; min-width: 110px; padding: 9px 18px; background: var(--panel-2); border: 0; border-top: 3px solid transparent; margin-right: 2px; cursor: pointer; text-transform: uppercase; font-size: 16px; color: var(--text); }
+.tabs > button.on { color: var(--amber); border-top-color: var(--amber); background: var(--panel); }
 
 /* --- controls -------------------------------------------------------------- */
 .btn { background: var(--raised); border: 1px solid #000; border-radius: var(--r); padding: 6px 14px; cursor: pointer; text-transform: uppercase; font-weight: 500; color: var(--text); white-space: nowrap; }
@@ -261,3 +261,10 @@ textarea.raw { width: 100%; min-height: 360px; background: #050505; color: var(-
 .kc.on { outline: 2px solid var(--amber); }
 .kc.used::after { content: ""; position: absolute; right: 3px; top: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); }
 .target.on { outline: 2px solid var(--amber); }
+.kmpage { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; }
+.kmpage > .cols { flex: 1; min-height: 0; }
+.pagetabs { border: 1px solid #000; border-radius: var(--r); align-items: center; }
+.pagetabs .tabright { margin-left: auto; padding-right: 8px; display: flex; gap: 8px; align-items: center; }
+.target .tn.wm { color: var(--amber); }
+.progress { height: 14px; background: #000; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
+.progress i { display: block; height: 100%; width: 0; background: var(--amber); transition: width .15s; }

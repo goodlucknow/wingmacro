@@ -31,8 +31,9 @@ locally; the pad reports them to the app. Firmware defaults:
 ```
 
 Every control can be remapped on the app's **Keymap** page (same raw HID commands as Vial, saved to the pad
-immediately), or in Vial (vial.rocks in Chrome, or the Vial desktop app) with the app stopped. Vial is still
-needed for Vial macros, tap dance, combos and assigning `QK_BOOT` (those need the pad unlocked). Ordinary
+immediately), which also edits Vial's keystroke macros, tap dance and combos. Keystroke macros need the pad
+unlocked: the app runs Vial's unlock (hold key 4 + key 13). Vial itself (vial.rocks or the desktop app, with
+the app stopped) is only needed for assigning `QK_BOOT`, which the app deliberately doesn't offer. Ordinary
 keys (e.g. F-keys for Wing Edit) and WM keys can be mixed freely. Layers 1–3 are transparent by
 default; events carry the current layer, so the app maps **(layer, WM id)** without per-layer
 keycodes. What each control *does* is set entirely in the app (macros), never here.
@@ -64,7 +65,9 @@ Pad → host, unsolicited, **only while subscribed** (so it never blocks when no
 - Don't run the app and the Vial editor against the pad on the same host at the same time.
 
 Other commands used (standard VIA/Vial): `0x11` layer count, `0x12` keymap buffer, `0x05` set key,
-`FE 03` / `FE 04` get / set encoder (the get reply has no echoed header: drain pending echoes first), `07 41` / `07 42` VialRGB mode / direct LED HSV, `08 41` get mode.
+`FE 03` / `FE 04` get / set encoder (the get reply has no echoed header: drain pending echoes first),
+`FE 05..08` unlock status/start/poll/lock, `FE 0D` tap dance / combo entries (32 + 32 on this build),
+`0x0C..0x0F` macro count / buffer size / get / set (16 macros, 2655 bytes; set needs unlock), `07 41` / `07 42` VialRGB mode / direct LED HSV, `08 41` get mode.
 See `tools/vialhid.py`.
 
 ## LEDs
