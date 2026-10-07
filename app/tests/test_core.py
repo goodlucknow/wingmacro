@@ -158,3 +158,23 @@ def test_vial_macro_roundtrip():
     buf = V.encode(macros)
     assert 0 not in buf[:buf.index(0)]  # no stray terminators inside macro 0
     assert V.decode(buf + b"\0" * 20, 4) == macros + [[]]
+
+
+def test_burst_radiates_from_fired_key():
+    from wingmacro.leds import Leds
+    from wingmacro.actions import Context
+
+    class FakePad:
+        keymap = []
+        connected = False
+    cfg = {"pad": {}, "macros": {}, "layers": {"0": {"buttons": {}}}}
+    ctx = Context(None, lambda: cfg)
+    leds = Leds(lambda: cfg, FakePad(), None, ctx)
+    leds.engine = Engine(lambda: cfg, ctx, leds)
+    leds.transient(5, "confirm", None, {"trigger": "hold", "fire_anim": "burst", "hold_colour": "red"})
+    t0 = leds.bursts[0][1]
+    near = leds.frame(t0 + 1 / leds.BURST_SPEED)        # ring at distance 1: neighbours of key 6 lit
+    assert near[4][2] > 100 and near[6][2] > 100 and near[15][2] < 60
+    far = leds.frame(t0 + 3 / leds.BURST_SPEED)         # ring has moved out to the far corner
+    assert far[15][2] > near[15][2] and far[4][2] < near[4][2]
+    assert leds.frame(t0 + leds.BURST_TIME + 0.1) and not leds.bursts

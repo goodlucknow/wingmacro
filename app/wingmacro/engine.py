@@ -121,6 +121,7 @@ class Engine:
         st = {"phase": "pressed", "map": m, "layer": l, "wm": wm,
               "idx": m.get("led_index", idx), "t0": time.monotonic()}
         if m.get("trigger", "press") == "momentary":
+            self._led(st, "confirm")
             self._momentary_start(st)
         elif m.get("trigger", "press") == "hold":
             st["phase"] = "holding"
@@ -157,6 +158,8 @@ class Engine:
             self.fire(st)
 
     def fire(self, st):
+        if st["map"].get("trigger", "press") != "hold":  # hold keys animate in _armed_fire
+            self._led(st, "confirm")
         key = (st["layer"], st["wm"])
         steps, mkey, retrig = self.resolve(st["map"].get("do", []), key, advance=True)
         self.run(steps, mkey or key, retrig, st["t0"], self._src(st))

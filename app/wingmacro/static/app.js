@@ -311,8 +311,14 @@ function keyEditor(idx) {
         momentary: "Acts the moment the key goes down and stays active while held (e.g. talkback). On release, everything it changed is put back and soft mutes fade back.",
       }[m.trigger] || "Fires when the key is released.")),
     sect("Action", doEditor(() => m.do, (v) => { m.do = v; }, wm, m.trigger === "momentary")),
-    sect("Key colour", h("p", { class: "hint" }, "The key's own colour. Macros change it with the Key LED action, e.g. green in a toggle's A side and red in its B side."),
-      colourPicker(m.background, (v) => { m.background = v; }, { allowNone: true, noneLabel: "Pad background" })));
+    sect("LED", h("p", { class: "hint" }, "Key colour is the key's resting colour. Macros change it with the Key LED action, e.g. a dim red here and full red in the macro."),
+      field("Key colour", colourPicker(m.background, (v) => { m.background = v; }, { allowNone: true, noneLabel: "Pad background" })),
+      h("div", { style: "height:10px" }),
+      field("Fire animation", seg([["none", "None"], ["flash", "Flash"], ["burst", "Flash + burst"]],
+        m.fire_anim || (m.trigger === "hold" ? "flash" : "none"), (v) => { m.fire_anim = v; commit(); }, "sm")),
+      h("p", { class: "hint" }, "Plays when the key fires. Burst sends a ring of light out across the pad."),
+      field("Animation colour", colourPicker(m.hold_colour, (v) => { m.hold_colour = v; }, { allowNone: true, noneLabel: "White (default)" })),
+      h("p", { class: "hint" }, "Used for the fire animation and, on hold keys, the glow while held.")));
   return [head(h("button", { class: "btn sm danger", onclick: () => { delete layerCfg(S.layer).buttons[wm]; commit(); } }, "Clear")), body];
 }
 
@@ -545,24 +551,38 @@ function pickTarget(current, set, chOnly) {
 
 // ---------------------------------------------------------------------------- LED editor
 function colourPicker(val, set, { allowNone = false, noneLabel = "Background" } = {}) {
+  // Palette swatches + brightness. A palette colour at full brightness is stored by name,
+  // anything else as [h, s, v] (v 0..200, the firmware's cap).
   const cur = colourOf(val);
-  const custom = val && typeof val !== "string" && !Object.values(PALETTE).some((p) => sameCol(p, val));
+  const isOff = val === "off" || (cur && cur[2] === 0);
+  const named = !isOff && cur && Object.entries(PALETTE).find(([n, c]) => n !== "off" && c[0] === cur[0] && c[1] === cur[1]);
+  const custom = cur && !isOff && !named;
+  const bright = cur && !isOff ? cur[2] / 200 : 1;
+  const store = (h0, s0, v) => { const n = Object.entries(PALETTE).find(([k, c]) => k !== "off" && c[0] === h0 && c[1] === s0); return n && v === 200 ? n[0] : [h0, s0, v]; };
   const wrap = h("div", {});
-  const sw = h("div", { class: "swatches" },
+  wrap.append(h("div", { class: "swatches" },
     allowNone && h("button", { class: "sw none" + (val == null ? " on" : ""), title: noneLabel, onclick: () => { set(undefined); commit(); } }),
-    Object.entries(PALETTE).map(([n, c]) => h("button", { class: "sw" + (val === n ? " on" : ""), title: n,
-      style: `background:${n === "off" ? "#000" : hsvCss(c)}`, onclick: () => { set(n); commit(); } })),
-    h("button", { class: "btn sm" + (custom ? " amber" : ""), onclick: () => { set([...(cur || [0, 255, 200])]); commit(); } }, "Custom"));
-  wrap.append(sw);
-  if (custom) {
+    Object.entries(PALETTE).map(([n, c]) => h("button", { class: "sw" + ((n === "off" ? isOff : named && named[0] === n) ? " on" : ""), title: n,
+      style: `background:${n === "off" ? "#000" : hsvCss(c)}`,
+      onclick: () => { set(n === "off" ? "off" : store(c[0], c[1], Math.round(200 * bright))); commit(); } })),
+    h("button", { class: "btn sm" + (custom ? " amber" : ""), onclick: () => {
+      if (custom) return;
+      const b0 = cur && !isOff ? cur : [0, 255, 200];          // nudge saturation so it no longer matches a swatch
+      set([b0[0], b0[1] >= 255 ? 254 : b0[1] + 1, b0[2]]); commit(); } }, "Custom")));
+  if (cur && !isOff) {
+    const prev = h("span", { class: "swprev", style: `background:${hsvCss(cur)}` });
+    const pct = h("span", {}, Math.round(bright * 100) + "%");
+    const hsv = [...cur];
+    const apply = () => { set(custom ? [...hsv] : store(hsv[0], hsv[1], hsv[2])); prev.style.background = hsvCss(hsv); commit(false); };
     const box = h("div", { class: "hsv" });
-    const prev = h("div", { style: `grid-column:1/-1;height:16px;border-radius:2px;background:${hsvCss(val)}` });
-    ["H", "S", "V"].forEach((lbl, i) => {
-      const out = h("span", {}, val[i]);
-      box.append(h("span", {}, lbl), h("input", { type: "range", min: 0, max: i === 2 ? 200 : 255, value: val[i],
-        oninput: (e) => { val[i] = +e.target.value; out.textContent = val[i]; prev.style.background = hsvCss(val); commit(false); } }), out);
+    if (custom) ["H", "S"].forEach((lbl, i) => {
+      const out = h("span", {}, hsv[i]);
+      box.append(h("span", {}, lbl), h("input", { type: "range", min: 0, max: 255, value: hsv[i],
+        oninput: (e) => { hsv[i] = +e.target.value; out.textContent = hsv[i]; apply(); }, onchange: () => render() }), out);
     });
-    box.append(prev); wrap.append(box);
+    box.append(h("span", {}, "☀"), h("input", { type: "range", min: 4, max: 200, value: hsv[2], title: "Brightness",
+      oninput: (e) => { hsv[2] = +e.target.value; pct.textContent = Math.round(hsv[2] / 2) + "%"; apply(); }, onchange: () => render() }), pct);
+    wrap.append(h("div", { class: "row", style: "align-items:center;gap:8px;margin-top:6px" }, prev, box));
   }
   return wrap;
 }

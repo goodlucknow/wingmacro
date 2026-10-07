@@ -101,7 +101,7 @@ input[type=text], input[type=number], select {
 input[type=number] { width: 84px; }
 input:focus, select:focus { outline: 1px solid var(--amber); border-color: var(--amber); }
 select { cursor: pointer; }
-label.f { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
+label.f { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
 .row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; }
 .sect { margin: 0 0 14px; }
 .sect > h4 { margin: 0 0 8px; font-size: 13px; font-weight: 600; letter-spacing: .1em; color: var(--dim); text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
@@ -177,7 +177,8 @@ label.f { display: flex; flex-direction: column; gap: 3px; font-size: 12px; colo
 .sw { width: 30px; height: 24px; border-radius: 2px; border: 1px solid #000; cursor: pointer; padding: 0; }
 .sw.on { outline: 2px solid var(--amber); outline-offset: 1px; }
 .sw.none { background: repeating-linear-gradient(45deg, #2a2a2e 0 4px, #1a1a1c 4px 8px); }
-.hsv { display: grid; grid-template-columns: 22px 1fr 34px; gap: 4px 6px; align-items: center; font-size: 12px; color: var(--dim); max-width: 320px; margin-top: 8px; }
+.hsv { display: grid; grid-template-columns: 22px 1fr 40px; gap: 4px 6px; align-items: center; font-size: 12px; color: var(--dim); width: 260px; }
+.swprev { width: 30px; height: 24px; border-radius: 2px; border: 1px solid #000; flex: none; }
 .hsv input[type=range] { accent-color: var(--amber); width: 100%; }
 .editor-empty { display: grid; place-items: center; height: 100%; color: var(--faint); text-align: center; padding: 30px; font-size: 18px; text-transform: uppercase; letter-spacing: .06em; }
 

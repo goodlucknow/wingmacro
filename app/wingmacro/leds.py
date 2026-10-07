@@ -32,15 +32,26 @@ class Leds:
         self.engine = None
         self.fx = {}  # idx -> (kind, t0, dur, colour)
         self.last = [OFF] * N_LEDS  # latest frame, for the web UI preview
+        self.bursts = []  # (source idx, t0, colour): rings radiating across the pad
 
     def transient(self, idx, kind, dur, mapping):
-        """Hold feedback from the engine: progress fill, armed flash, confirm flash."""
+        """Feedback from the engine: hold progress fill, armed flash, and the fire animation
+        (`fire_anim`: none | flash | burst; hold keys default to flash, others to none).
+        All use the mapping's `hold_colour` (default white)."""
         if kind == "clear":
             self.fx.pop(idx, None)
             return
+        target = colour(mapping.get("hold_colour"), FLASH)
+        now = time.monotonic()
         if kind == "confirm":
+            anim = mapping.get("fire_anim", "flash" if mapping.get("trigger") == "hold" else "none")
+            if anim == "none":
+                self.fx.pop(idx, None)
+                return
             dur = 0.45
-        self.fx[idx] = (kind, time.monotonic(), dur, FLASH)
+            if anim == "burst":
+                self.bursts.append((idx, now, target))
+        self.fx[idx] = (kind, now, dur, target)
 
     def key_colour(self, layer, idx, m, bg_default, now):
         """Resting colour of key `idx` whose mapping `m` lives on `layer`."""
@@ -76,13 +87,35 @@ class Leds:
             elif kind == "armed":
                 if e > dur:
                     continue  # engine clears/confirms
-                out[idx] = FLASH if int(e * 12) % 2 == 0 else OFF
+                out[idx] = target if int(e * 12) % 2 == 0 else OFF
             elif kind == "confirm":
                 if e > dur:
                     del self.fx[idx]
                     continue
                 out[idx] = target if int(e / 0.075) % 2 == 0 else OFF
+        self._draw_bursts(out, now)
         return out
+
+    BURST_SPEED = 7.0  # keys per second
+    BURST_WIDTH = 0.9  # ring thickness, in keys
+    BURST_TIME = 0.9
+
+    def _draw_bursts(self, out, now):
+        """Firework: a ring of the fire colour expanding from the key, fading as it goes."""
+        self.bursts = [b for b in self.bursts if now - b[1] < self.BURST_TIME]
+        for src, t0, c in self.bursts:
+            e = now - t0
+            r = e * self.BURST_SPEED
+            fade = 1 - e / self.BURST_TIME
+            sy, sx = divmod(src, 4)
+            for idx in range(N_LEDS):
+                if idx == src:
+                    continue
+                y, x = divmod(idx, 4)
+                d = math.hypot(x - sx, y - sy)
+                k = max(0.0, 1 - abs(d - r) / self.BURST_WIDTH) * fade
+                if k > 0.05 and c[2] * k > out[idx][2]:
+                    out[idx] = (c[0], c[1], int(c[2] * k))
 
     def _tap(self, now, c, step):
         st = self.ctx.taps.get(tuple(sorted(int(x) for x in step.get("slots", []))))

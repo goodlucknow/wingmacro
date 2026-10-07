@@ -59,7 +59,10 @@ LED feedback for `hold`:
   Example: a toggle whose A side sets green and B side sets red.
 - The colour state belongs to (mapping layer, key), so a key inherited on other layers shows the same colour. State is kept in memory: after an app restart, keys show their own colour and toggles start on A.
 - **Momentary** keys restore any colours they changed when released.
-- **Built-in transients** (priority over the colour above): hold progress fill / armed flash / confirm flash, and the tap-tempo beat flash on tap keys.
+- **Animations** (priority over the colour above): the hold glow while held and the armed flash, plus a **fire animation** when the key fires.
+  Set it with `fire_anim`: `none`, `flash`, or `burst` (a flash plus a ring of light spreading out across the pad). Hold keys default to `flash`, all others to `none`.
+  Animations use `hold_colour` (default white). The tap-tempo beat flash runs on tap keys.
+- Brightness is the V of an HSV colour (0–200). In the UI, every colour picker has a brightness slider, so a palette colour can be stored at any brightness.
 - Colours are HSV triples (0–255, as in VialRGB) or palette names (`red`, `orange`, `amber`, `yellow`, `green`, `cyan`, `blue`, `purple`, `magenta`, `white`, `off`). The firmware caps brightness at 200.
 - When the layer changes, the app repaints all 16 LEDs with that layer's colours. On exit it restores VialRGB mode 2.
 
