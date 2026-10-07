@@ -1,5 +1,0 @@
-aiohttp>=3.9
-hidapi>=0.14
-
-[dev]
-pytest
