@@ -123,3 +123,30 @@ def test_momentary_restores_on_release():
         eng.release(1, 0); await asyncio.sleep(0.02)
         assert w.v == {"/ch/40/mute": 1, "/mgrp/2/mute": 0}   # put back on release
     asyncio.run(go())
+
+
+def test_led_actions_digico_style():
+    from wingmacro.actions import Context
+
+    class FakeWing:
+        async def value(self, p): return 0
+        async def set(self, p, v): pass
+    on = {"steps": [{"do": "led", "colour": "green"}]}
+    off = {"steps": [{"do": "led", "colour": "red"}]}
+    cfg = {"pad": {}, "macros": {"on": on, "off": off}, "layers": {"0": {"buttons": {
+        "1": {"do": {"toggle": ["on", "off"]}},
+        "2": {"trigger": "momentary", "do": [{"do": "led", "colour": "amber", "effect": "flash"},
+                                             {"do": "led", "colour": "blue", "layer": 1, "key": 1}]}}}}}
+    ctx = Context(FakeWing(), lambda: cfg)
+    eng = Engine(lambda: cfg, ctx)
+
+    async def go():
+        eng.press(1, 0); eng.release(1, 0); await asyncio.sleep(0.01)
+        assert ctx.led_state[(0, 0)] == ("green", "solid")
+        eng.press(1, 0); eng.release(1, 0); await asyncio.sleep(0.01)
+        assert ctx.led_state[(0, 0)] == ("red", "solid")
+        eng.press(2, 1); await asyncio.sleep(0.01)                 # momentary: own key + key 1
+        assert ctx.led_state[(0, 1)] == ("amber", "flash") and ctx.led_state[(0, 0)] == ("blue", "solid")
+        eng.release(2, 1); await asyncio.sleep(0.01)
+        assert (0, 1) not in ctx.led_state and ctx.led_state[(0, 0)] == ("red", "solid")
+    asyncio.run(go())

@@ -63,6 +63,8 @@ class Context:
         self.fx_models = {}  # slot -> model name
         self.fx_defs = {}  # slot -> {param: NodeDef}
         self.taps = {}  # slots key -> {"t": [press times], "ms": period or None}
+        self.led_state = {}  # (mapping layer, key index) -> (colour, effect), set by `led` actions
+        self.led_record = None  # during a momentary press: {key: previous state} for restore
         self.on_beat = []  # fn(period_s)
 
     async def fx_def(self, slot, param):
@@ -200,6 +202,25 @@ async def a_refresh(ctx, p, ticks=None):
     log.info("refresh: fx %s", {k: v for k, v in ctx.fx_models.items() if v and v != "NONE"})
 
 
+async def a_led(ctx, p, ticks=None):
+    """Set a key's colour (DiGiCo-style). Default target: the key that ran the macro.
+    `layer`/`key` (1-based) address another key; colour "base" returns it to its own colour."""
+    if p.get("key"):
+        target = (int(p.get("layer", 1)) - 1, int(p["key"]) - 1)
+    else:
+        target = p.get("_src")
+    if target is None:
+        log.info("led: no target key (knob actions must name a key)")
+        return
+    target = tuple(target)
+    if ctx.led_record is not None and target not in ctx.led_record:
+        ctx.led_record[target] = ctx.led_state.get(target)
+    if p.get("colour", "base") == "base":
+        ctx.led_state.pop(target, None)
+    else:
+        ctx.led_state[target] = (p["colour"], p.get("effect", "solid"))
+
+
 async def a_wait(ctx, p, ticks=None):
     await asyncio.sleep(float(p.get("ms", 0)) / 1000)
 
@@ -301,6 +322,6 @@ async def _fx_step(ctx, p, ticks):
 ACTIONS = {
     "mute": a_mute, "softmute": a_softmute, "mgrp": a_mgrp, "level_set": a_level_set,
     "level": a_level, "gain": a_gain, "fx": a_fx, "fx_cycle": a_fx_cycle, "fx_set": a_fx_set,
-    "tap": a_tap, "refresh": a_refresh, "wait": a_wait, "set": a_set,
+    "tap": a_tap, "refresh": a_refresh, "wait": a_wait, "set": a_set, "led": a_led,
 }
 ROTARY = {"level", "gain", "fx", "fx_cycle"}

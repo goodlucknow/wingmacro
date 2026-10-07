@@ -36,8 +36,6 @@ class App:
         names = [f"/{k}/{n}/{f}" for k, cnt in STRIPS for n in range(1, cnt + 1) for f in ("name", "col")
                  if not (k == "mgrp" and f == "col")]
         await self.wing.watch(names)
-        if self.leds:
-            await self.wing.watch(self.leds.paths())
 
     def _on_wing_change(self, path, value):
         if path.startswith("/fx/") and path.endswith("/mdl"):
@@ -69,8 +67,6 @@ class App:
         C.validate(cfg)
         C.save(self.cfg_path, cfg)
         self.cfg = cfg
-        if self.leds and self.wing.connected:
-            await self.wing.watch(self.leds.paths())
 
     async def _pad_events(self):
         while True:

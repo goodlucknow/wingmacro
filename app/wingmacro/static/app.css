@@ -95,6 +95,7 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .seg button:last-child { border-right: 0; }
 .seg button.on { background: var(--amber); color: var(--amber-ink); }
 .seg.sm button { padding: 3px 10px; font-size: 13px; }
+.seg.fixed button { width: 112px; }
 input[type=text], input[type=number], select {
   background: #050505; border: 1px solid var(--line); border-radius: 2px; padding: 5px 8px; color: var(--text); min-width: 0; }
 input[type=number] { width: 84px; }

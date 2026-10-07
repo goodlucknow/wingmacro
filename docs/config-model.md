@@ -49,27 +49,19 @@ LED feedback for `hold`:
 - Fired: 3 flashes, then back to the state colour.
 - Cancelled, or released too early: snaps back to the state colour.
 
-## LED rules
+## LED rules (DiGiCo-macro style, decided 2026-10-07)
 
-- **Background**: `pad.background`, HSV, default `[22,255,47]` (case colour). Every unbound key shows it,
-  including non-WM keys. Per-layer and per-key overrides are allowed.
-- **State colour**: `led: {bind, on, off}`, where `bind` is a WING state expression:
-  - `mute:<target>`
-  - `mgrp:<n>`
-  - `softmute:<target>`: on while faded down, `fading` while a fade is running
-  - `floor:<target>`: on at −∞
-  - `fx:<slot>/<param>==<value>`
-  - `connected`
-- `led: "auto"` (the default) derives the binding from the first action in the macro:
-  - mute → red when on / background when off
-  - softmute → red when down, pulsing amber while fading
-  - mgrp → red when on
-  - tap → pulses on that key's own tempo
-- **Transient effects** layer on top in this priority: hold progress / confirm flash > `flash` (press feedback) >
-  tap pulse > state colour > background.
-- Colours are HSV triples (0–255, as in VialRGB) or palette names (`red`, `green`, `amber`, `blue`, `white`, `off`).
-  The firmware caps brightness at 200.
-- When the layer changes, the app repaints all 16 LEDs with that layer's rules. On exit it restores VialRGB mode 2.
+- LEDs are **not** bound to console state. Each key shows its own colour, and macros change it with the `led` action.
+- **Key colour**: `background` on the mapping (HSV or palette name). The default is `pad.background`, HSV `[22,255,47]` (case colour).
+  Unmapped and non-WM keys show the pad background.
+- **`led` action**: `colour` (palette name, HSV, or `"base"` to go back to the key colour), `effect` (`solid` | `flash` | `pulse`),
+  and optional `layer` + `key` (1-based) to address another key. The default target is the key that ran the macro.
+  Example: a toggle whose A side sets green and B side sets red.
+- The colour state belongs to (mapping layer, key), so a key inherited on other layers shows the same colour. State is kept in memory: after an app restart, keys show their own colour and toggles start on A.
+- **Momentary** keys restore any colours they changed when released.
+- **Built-in transients** (priority over the colour above): hold progress fill / armed flash / confirm flash, and the tap-tempo beat flash on tap keys.
+- Colours are HSV triples (0–255, as in VialRGB) or palette names (`red`, `orange`, `amber`, `yellow`, `green`, `cyan`, `blue`, `purple`, `magenta`, `white`, `off`). The firmware caps brightness at 200.
+- When the layer changes, the app repaints all 16 LEDs with that layer's colours. On exit it restores VialRGB mode 2.
 
 ## Targets
 
@@ -92,6 +84,7 @@ Every fader-type target follows the same floor rules.
 | `fx_set` | `slot`, `param`, `value` | button | |
 | `tap` | `slots` (list), `window?` (default 4) | button | Tap time is taken at the key press. Moving average of the last `window` intervals; a gap of 2 s or more starts over. Writes the beat period as-is to `/fx/N/time` of each listed slot. No multiplier: the delay's own `fact` (subdivision) stays on the console and can be mapped like any param. Slots without a `time` param in ms (e.g. BBD-DL) are skipped. Tap state is per slot set; the WING has no global tempo. |
 | `refresh` | — | button | Reconnects if needed, polls state and rescans the FX slots (and so the delays). |
+| `led` | `colour`, `effect?`, `layer?` + `key?` | button | Sets a key's LED (see LED rules). |
 | `wait` | `ms` | step | |
 | `set` | `path`, `value` | button | Advanced: writes any WING parameter by path, for things the library doesn't cover yet. |
 
@@ -113,12 +106,14 @@ At slow speeds each tick is exactly one step. Faster turning multiplies the *num
       "steps": [
         { "do": "softmute", "target": "dca/1", "op": "down", "time": 10 },
         { "do": "wait", "ms": 2000 },
-        { "do": "mgrp", "n": 2, "op": "on" }
+        { "do": "mgrp", "n": 2, "op": "on" },
+        { "do": "led", "colour": "red" }
       ]
     },
     "band_in": { "steps": [
         { "do": "mgrp", "n": 2, "op": "off" },
-        { "do": "softmute", "target": "dca/1", "op": "up", "time": 10 }
+        { "do": "softmute", "target": "dca/1", "op": "up", "time": 10 },
+        { "do": "led", "colour": "green" }
     ] }
   },
   "layers": {
@@ -126,10 +121,9 @@ At slow speeds each tick is exactly one step. Faster turning multiplies the *num
       "buttons": {
         "1":  { "trigger": "press", "do": [{ "do": "mute", "target": "ch/1", "op": "toggle" }] },
         "2":  { "trigger": "press", "do": [{ "do": "softmute", "target": "main/1", "op": "toggle", "time": 5 }] },
-        "4":  { "trigger": "hold", "hold_ms": 800, "do": { "toggle": ["band_out", "band_in"] },
-                "led": { "bind": "softmute:dca/1", "on": "red", "off": "green" } },
+        "4":  { "trigger": "hold", "hold_ms": 800, "do": { "toggle": ["band_out", "band_in"] }, "background": "green" },
         "13": { "trigger": "press", "do": [{ "do": "tap", "slots": [3, 4] }] },
-        "16": { "trigger": "press", "do": [{ "do": "refresh" }], "led": { "bind": "connected", "on": "off", "off": "red" } }
+        "16": { "trigger": "press", "do": [{ "do": "refresh" }] }
       },
       "encoders": {
         "left":  { "turn": [{ "do": "level", "target": "main/1" }],

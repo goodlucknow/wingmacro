@@ -29,6 +29,7 @@ const ACT = {
   fx_cycle:  { label: "FX option (cycle)", g: "Effects", rot: true, both: true, f: [["slot", "fxslot"], ["param", "fxenum"], ["dir", "dir"]] },
   fx_set:    { label: "Set FX parameter", g: "Effects", f: [["slot", "fxslot"], ["param", "fxparam"], ["value", "fxvalue"]] },
   tap:       { label: "Tap tempo", g: "Effects", f: [["slots", "fxslots"], ["window", "num", { ph: "4", step: 1, min: 1 }]] },
+  led:       { label: "Key LED", g: "Pad", f: [["colour", "ledcolour"], ["effect", "effect"], ["key", "ledtarget"]] },
   wait:      { label: "Wait", g: "System", f: [["ms", "num", { unit: "ms", def: 500, step: 50, min: 0 }]] },
   refresh:   { label: "Refresh console", g: "System", f: [] },
   set:       { label: "Raw set (advanced)", g: "System", f: [["path", "text", { ph: "/ch/1/eq/on" }], ["value", "text", { ph: "1" }]] },
@@ -284,16 +285,19 @@ function keyEditor(idx) {
       oninput: (e) => { m.name = e.target.value || undefined; commit(false); renderTop(); }, onchange: () => render() })),
     sect("Trigger",
       h("div", { class: "row" },
-        seg([["press", "Press"], ["hold", "Hold"], ["momentary", "Momentary"]], m.trigger || "press", (v) => {
-          m.trigger = v; if (v === "momentary" && m.do?.toggle) m.do = m.do.toggle[0]; commit(); }),
-        m.trigger === "hold" && field("Hold time", h("span", {}, numInput(m.hold_ms, (v) => { m.hold_ms = v; }, { ph: pad.hold_ms ?? 800, step: 50, min: 100 }), h("span", { class: "unit" }, "ms"))),
-        m.trigger === "hold" && field("Cancel window", h("span", {}, numInput(m.cancel_ms, (v) => { m.cancel_ms = v; }, { ph: pad.cancel_ms ?? 400, step: 50, min: 0 }), h("span", { class: "unit" }, "ms")))),
-      h("p", { class: "hint" }, {
+        seg([["momentary", "Momentary"], ["press", "Press"], ["hold", "Hold"]], m.trigger || "press", (v) => {
+          m.trigger = v; if (v === "momentary" && m.do?.toggle) m.do = m.do.toggle[0]; commit(); }, "fixed"),
+        // always laid out, hidden unless Hold, so the row never shifts
+        h("div", { class: "row", style: m.trigger === "hold" ? "" : "visibility:hidden" },
+          field("Hold time", h("span", {}, numInput(m.hold_ms, (v) => { m.hold_ms = v; }, { ph: pad.hold_ms ?? 800, step: 50, min: 100 }), h("span", { class: "unit" }, "ms"))),
+          field("Cancel window", h("span", {}, numInput(m.cancel_ms, (v) => { m.cancel_ms = v; }, { ph: pad.cancel_ms ?? 400, step: 50, min: 0 }), h("span", { class: "unit" }, "ms"))))),
+      h("p", { class: "hint", style: "min-height:2.6em" }, {
         hold: "Hold until the key lights fully, then release. It flashes while armed; tap it again within the cancel window to cancel.",
         momentary: "Acts the moment the key goes down and stays active while held (e.g. talkback). On release, everything it changed is put back and soft mutes fade back.",
       }[m.trigger] || "Fires when the key is released.")),
     sect("Action", doEditor(() => m.do, (v) => { m.do = v; }, wm, m.trigger === "momentary")),
-    sect("LED", ledEditor(m)));
+    sect("Key colour", h("p", { class: "hint" }, "The key's own colour. Macros change it with the Key LED action, e.g. green in a toggle's A side and red in its B side."),
+      colourPicker(m.background, (v) => { m.background = v; }, { allowNone: true, noneLabel: "Pad background" })));
   return [head(h("button", { class: "btn sm danger", onclick: () => { delete layerCfg(S.layer).buttons[wm]; commit(); } }, "Clear")), body];
 }
 
@@ -374,6 +378,7 @@ function stepList(steps, rotary) {
       if (t === "fxslots") st[k] = [];
       if (t === "mgrp") st[k] = 1;
       if (t === "dir" && !rotary) st[k] = "next";
+      if (t === "ledcolour") st[k] = "green";
     }
     steps.push(st); commit();
   } }, h("option", { value: "" }, rotary ? "+ Add rotary action" : "+ Add action"),
@@ -432,6 +437,15 @@ function fieldFor(st, k, t, o) {
     })));
     case "fxparam": case "fxenum": return field("Parameter", fxParamSelect(st, t === "fxenum"));
     case "fxvalue": return field("Value", fxValueInput(st));
+    case "ledcolour": return field("Colour", colourPicker(st[k] === "base" ? undefined : st[k], (v) => { st[k] = v ?? "base"; }, { allowNone: true, noneLabel: "Back to the key's own colour" }));
+    case "effect": return field("Effect", seg([["solid", "Solid"], ["flash", "Flash"], ["pulse", "Pulse"]], st[k] || "solid", (v) => { st[k] = v; commit(); }, "sm"));
+    case "ledtarget": {
+      const own = !st.key;
+      return field("Key", h("div", { class: "row", style: "gap:6px;align-items:center" },
+        seg([[true, "This key"], [false, "Other key"]], own, (v) => { if (v) { delete st.key; delete st.layer; } else { st.key = 1; st.layer = S.layer + 1; } commit(); }, "sm"),
+        !own && h("select", { onchange: (e) => { st.layer = +e.target.value; commit(); } }, [1, 2, 3, 4].map((l) => h("option", { value: l, selected: (st.layer || 1) === l }, `Layer ${l}`))),
+        !own && h("select", { onchange: (e) => { st.key = +e.target.value; commit(); } }, [...Array(16).keys()].map((i) => h("option", { value: i + 1, selected: st.key === i + 1 }, `Key ${i + 1}`)))));
+    }
   }
   return null;
 }
@@ -537,50 +551,6 @@ function colourPicker(val, set, { allowNone = false, noneLabel = "Background" } 
   }
   return wrap;
 }
-function autoRuleText(m) {
-  const st = firstSteps(m.do)[0];
-  if (!st) return "No automatic LED for this action: the key shows the background colour.";
-  const t = st.target && targetLabel(st.target).name;
-  return { mute: `Red while ${t} is muted.`, softmute: `Red while ${t} is faded out; pulsing amber while fading.`,
-    mgrp: `Red while mute group ${st.n} is on.`, tap: "Flashes on this key's tapped tempo." }[st.do]
-    || "No automatic LED for this action: the key shows the background colour.";
-}
-const BINDS = [["mute", "Mute on"], ["softmute", "Soft mute (faded out)"], ["mgrp", "Mute group on"], ["floor", "Level at −∞"], ["fx", "FX value equals"], ["connected", "WING connected"]];
-function ledEditor(m) {
-  const r = m.led ?? "auto";
-  const mode = r === "auto" ? "auto" : r === "none" ? "none" : "custom";
-  const out = [h("div", { style: "margin-bottom:8px" }, seg([["auto", "Auto"], ["custom", "Custom"], ["none", "Off"]], mode, (v) => {
-    m.led = v === "custom" ? { bind: "mute:" + (firstSteps(m.do)[0]?.target || "ch/1"), on: "red" } : v; commit();
-  }, "sm"))];
-  if (mode === "auto") out.push(h("p", { class: "hint" }, autoRuleText(m)));
-  if (mode === "none") out.push(h("p", { class: "hint" }, "The key always shows its background colour."));
-  if (mode === "custom") {
-    const [kind, arg = ""] = r.bind.split(/:(.*)/s);
-    const setBind = (k, a) => { r.bind = a != null && a !== "" ? `${k}:${a}` : k; commit(); };
-    let argEl = null;
-    if (["mute", "softmute", "floor"].includes(kind)) argEl = field("Target", targetBtn(arg, (v) => setBind(kind, v)));
-    if (kind === "mgrp") argEl = field("Group", h("select", { onchange: (e) => setBind(kind, e.target.value) },
-      [1, 2, 3, 4, 5, 6, 7, 8].map((n) => h("option", { value: n, selected: +arg === n }, n))));
-    if (kind === "fx") {
-      const [path = "", want = ""] = arg.split("==");
-      const [slot, param] = path.split("/");
-      const tmp = { slot: +slot || 1, param, value: want };
-      argEl = h("div", { class: "row" },
-        field("FX slot", fxSlotSelect(tmp.slot, (v) => setBind("fx", `${v}/==`))),
-        field("Parameter", (() => { const s = fxParamSelect(tmp, false); s.onchange = (e) => setBind("fx", `${tmp.slot}/${e.target.value}==`); return s; })()),
-        field("Equals", h("input", { type: "text", value: want, oninput: (e) => { r.bind = `fx:${tmp.slot}/${tmp.param || ""}==${e.target.value}`; commit(false); } })));
-    }
-    out.push(h("div", { class: "row", style: "margin-bottom:10px" },
-      field("Lit when", h("select", { onchange: (e) => setBind(e.target.value, ["connected"].includes(e.target.value) ? null : e.target.value === "mgrp" ? "1" : firstSteps(m.do)[0]?.target || "ch/1") },
-        BINDS.map(([k, l]) => h("option", { value: k, selected: k === kind }, l)))), argEl));
-    out.push(field("On colour", colourPicker(r.on, (v) => { r.on = v; })));
-    out.push(h("div", { style: "height:8px" }), field("Off colour", colourPicker(r.off, (v) => { r.off = v; }, { allowNone: true })));
-    if (kind === "softmute") out.push(h("div", { style: "height:8px" }), field("While fading (pulses)", colourPicker(r.fading, (v) => { r.fading = v; }, { allowNone: true, noneLabel: "Amber (default)" })));
-  }
-  out.push(h("div", { style: "height:10px" }), field("Key background", colourPicker(m.background, (v) => { m.background = v; }, { allowNone: true, noneLabel: "Pad default" })));
-  return h("div", {}, out);
-}
-
 // ---------------------------------------------------------------------------- macros page
 function macroUsers(name) {
   const users = [];

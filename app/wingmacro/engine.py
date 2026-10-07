@@ -159,7 +159,12 @@ class Engine:
     def fire(self, st):
         key = (st["layer"], st["wm"])
         steps, mkey, retrig = self.resolve(st["map"].get("do", []), key, advance=True)
-        self.run(steps, mkey or key, retrig, st["t0"])
+        self.run(steps, mkey or key, retrig, st["t0"], self._src(st))
+
+    @staticmethod
+    def _src(st):
+        """LED address of the key that fired: (mapping layer, key index)."""
+        return (st["layer"], st["idx"]) if st.get("idx") is not None else None
 
     def _momentary_start(self, st):
         """Run on key down. Steps run against a Recorder so the release can restore."""
@@ -169,7 +174,9 @@ class Engine:
         st["steps"] = steps
         ctx = copy.copy(self.ctx)
         ctx.wing = Recorder(self.ctx.wing, st["record"])
-        st["task"] = asyncio.create_task(self._run(steps, ("momentary", st["layer"], st["wm"]), st["t0"], ctx))
+        ctx.led_record = st["led_record"] = {}
+        st["task"] = asyncio.create_task(
+            self._run(steps, ("momentary", st["layer"], st["wm"]), st["t0"], self._src(st), ctx))
 
     async def _momentary_end(self, st):
         """On release: stop the macro, fade soft mutes back, restore everything else."""
@@ -180,6 +187,11 @@ class Engine:
                 await task
             except asyncio.CancelledError:
                 pass
+        for key, prev in st["led_record"].items():
+            if prev is None:
+                self.ctx.led_state.pop(key, None)
+            else:
+                self.ctx.led_state[key] = prev
         w = self.ctx.wing
         for path, value in st["record"].items():
             if value is not None:
@@ -195,18 +207,18 @@ class Engine:
 
     # --- macros -----------------------------------------------------------
 
-    def run(self, steps, key, retrigger="restart", t0=None):
+    def run(self, steps, key, retrigger="restart", t0=None, src=None):
         old = self.running.get(key)
         if old and not old.done():
             if retrigger == "ignore":
                 return
             if retrigger == "restart":
                 old.cancel()
-        task = asyncio.create_task(self._run(steps, key, t0))
+        task = asyncio.create_task(self._run(steps, key, t0, src))
         if retrigger != "parallel":
             self.running[key] = task
 
-    async def _run(self, steps, key, t0=None, ctx=None):
+    async def _run(self, steps, key, t0=None, src=None, ctx=None):
         try:
             for st in steps:
                 fn = ACTIONS.get(st.get("do"))
@@ -219,7 +231,7 @@ class Engine:
                     if st["do"] in ROTARY:
                         await fn(c, st, int(st.get("ticks", 1)))
                     else:
-                        await fn(c, dict(st, _t0=t0) if t0 else st)
+                        await fn(c, dict(st, _t0=t0, _src=src))
                 except asyncio.CancelledError:
                     raise
                 except Exception:
