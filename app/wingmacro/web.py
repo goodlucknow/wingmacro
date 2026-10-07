@@ -143,7 +143,15 @@ async def start_web(app, host, port):
             rt.cancel()
         return sock
 
-    wa = web.Application()
+    @web.middleware
+    async def revalidate(req, handler):
+        """Make browsers re-check UI files on every load (cheap 304s), so updates show on refresh."""
+        resp = await handler(req)
+        if req.path == "/" or req.path.startswith("/static/"):
+            resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+    wa = web.Application(middlewares=[revalidate])
     wa.add_routes([
         web.get("/", index), web.static("/static", STATIC),
         web.get("/api/status", status), web.get("/api/ws", ws),
