@@ -195,7 +195,7 @@ function summary(m) {                       // -> {cap, col, name, act}
   let r = { cap: "", col: null, name: "", act: "" };
   const st = firstSteps(doV)[0];
   if (st) {
-    const t = st.target && targetLabel(st.target);
+    const t = targetLabel(st.target);           // safe when no target has been picked yet
     switch (st.do) {
       case "mute": r = { cap: t.cap, col: t.col, name: t.name, act: "Mute" }; break;
       case "softmute": r = { cap: t.cap, col: t.col, name: t.name, act: `Soft mute ${st.time ?? 5}s` }; break;
