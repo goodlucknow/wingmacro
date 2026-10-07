@@ -14,6 +14,7 @@ log = logging.getLogger(__name__)
 
 VID, PID, IFACE = 0xD010, 0x1601, 1
 ROWS, COLS = 4, 5
+N_ENCODERS = 3  # left, right, big
 QK_KB_0 = 0x7E00
 KC_TRNS = 0x0001
 N_LEDS = 16
@@ -37,6 +38,7 @@ class Pad:
         self.connected = False
         self.layer = 0
         self.keymap = []  # [layer][row*COLS+col] -> keycode
+        self.encmap = []  # [layer][encoder 0..2] -> [ccw, cw]
         self.events = asyncio.Queue()
         self._loop = None
         self._wlock = threading.Lock()
@@ -99,6 +101,7 @@ class Pad:
         try:
             self._hello()
             self.keymap = self._read_keymap()
+            self.encmap = [[list(self.get_encoder(l, i)) for i in range(N_ENCODERS)] for l in range(len(self.keymap))]
             r = self.cmd(0x08, 0x41)
             self._saved_mode = (r[2] | r[3] << 8, r[4], r[5], r[6], r[7])
             if self._saved_mode[0] == VIALRGB_DIRECT:  # left over from a crash
@@ -130,13 +133,19 @@ class Pad:
                 raise PadError("write failed")
 
     def send(self, *data):
-        """Fire-and-forget command (its reply is discarded)."""
-        self._write(data)
-
-    def cmd(self, *data, timeout=1.0):
+        """Fire-and-forget command (its echo is discarded by the reader)."""
         with self._clock:
+            self._write(data)
+
+    def cmd(self, *data, timeout=1.0, match=True):
+        """Send and wait for the reply. Replies normally echo the first two bytes; match=False
+        takes the next non-event report (Vial's get_encoder overwrites the header)."""
+        with self._clock:
+            if not match:  # let echoes of earlier fire-and-forget sends arrive and be dropped
+                self._reply = None
+                time.sleep(0.03)
             self._reply_ev.clear()
-            self._reply = (bytes(data[:2]), None)
+            self._reply = (bytes(data[:2]) if match else b"", None)
             self._write(data)
             if not self._reply_ev.wait(timeout):
                 raise PadError(f"no reply to {bytes(data[:2]).hex()}")
@@ -197,6 +206,20 @@ class Pad:
         kcs = [int.from_bytes(buf[i:i + 2], "big") for i in range(0, size, 2)]
         per = ROWS * COLS
         return [kcs[l * per:(l + 1) * per] for l in range(layers)]
+
+    # --- keymap editing (Vial-compatible, saved to the pad's EEPROM) -----------
+
+    def get_encoder(self, layer, idx):
+        r = self.cmd(0xFE, 0x03, layer, idx, match=False)
+        return int.from_bytes(r[0:2], "big"), int.from_bytes(r[2:4], "big")
+
+    def set_key(self, layer, row, col, kc):
+        self.cmd(0x05, layer, row, col, kc >> 8, kc & 0xFF)
+        self.keymap[layer][row * COLS + col] = kc
+
+    def set_encoder(self, layer, idx, clockwise, kc):
+        self.cmd(0xFE, 0x04, layer, idx, int(bool(clockwise)), kc >> 8, kc & 0xFF, match=False)
+        self.encmap[layer][idx][int(bool(clockwise))] = kc
 
     # --- keymap helpers ---------------------------------------------------
 

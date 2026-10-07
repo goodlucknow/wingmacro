@@ -56,6 +56,25 @@ class App:
             return {"known": False, "layers": [[i + 1 for i in range(16)] for _ in range(4)]}
         return {"known": True, "layers": [[p.key_wm(l, i) for i in range(16)] for l in range(len(p.keymap))]}
 
+    def keymap(self):
+        p = self.pad
+        return {"connected": bool(p and p.connected and p.keymap), "cols": 5,
+                "layers": p.keymap if p else [], "encoders": p.encmap if p else []}
+
+    async def set_keycode(self, body):
+        """Write one keycode to the pad: {layer,row,col,kc} or {layer,encoder,cw,kc}."""
+        p = self.pad
+        if not (p and p.connected):
+            raise ValueError("pad not connected")
+        kc = int(body["kc"]) & 0xFFFF
+        if kc == 0x7C00:
+            raise ValueError("QK_BOOT needs the pad unlocked: assign it in Vial")
+        loop = asyncio.get_running_loop()
+        if "encoder" in body:
+            await loop.run_in_executor(None, p.set_encoder, int(body["layer"]), int(body["encoder"]), body["cw"], kc)
+        else:
+            await loop.run_in_executor(None, p.set_key, int(body["layer"]), int(body["row"]), int(body["col"]), kc)
+
     async def set_console(self, ip):
         cfg = dict(self.cfg, console=dict(self.cfg.get("console", {}), ip=ip or ""))
         C.save(self.cfg_path, cfg)

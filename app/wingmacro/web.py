@@ -64,6 +64,16 @@ async def start_web(app, host, port):
         await app.set_console((body.get("ip") or "").strip())
         return web.json_response({"ok": True})
 
+    async def keymap(_):
+        return web.json_response(app.keymap())
+
+    async def set_keycode(req):
+        try:
+            await app.set_keycode(await req.json())
+        except (ValueError, KeyError, TypeError, OSError) as e:
+            return web.json_response({"ok": False, "error": str(e)}, status=400)
+        return web.json_response({"ok": True})
+
     async def ws(req):
         """Pushes status, LED preview and new pad events about 10x a second."""
         sock = web.WebSocketResponse(heartbeat=20)
@@ -100,6 +110,7 @@ async def start_web(app, host, port):
         web.get("/api/strips", strips), web.get("/api/pad", pad_keys),
         web.get("/api/fx", fx_list), web.get("/api/fx/{slot}", fx_params),
         web.get("/api/scan", scan), web.post("/api/console", set_console),
+        web.get("/api/keymap", keymap), web.post("/api/keymap", set_keycode),
     ])
     runner = web.AppRunner(wa, access_log=None)
     await runner.setup()

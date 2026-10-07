@@ -240,3 +240,24 @@ textarea.raw { width: 100%; min-height: 360px; background: #050505; color: var(-
   .fxgrid { grid-template-columns: repeat(2, 1fr); }
   .tabs button { min-width: 0; flex: 1; padding: 8px 6px; }
 }
+
+/* --- keymap page --------------------------------------------------------------------- */
+.key.km { justify-content: center; }
+.key .kmname { display: block; font-size: 15px; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.key .kmname.wm { color: var(--amber); }
+.knob.kmknob .kl { font-size: 10px; }
+.knob.big { top: 53.6%; left: 70.35%; width: 23.1%; }
+.knob.big .dial { width: 100%; }
+.knob.big .kl { position: absolute; top: 44%; width: 80%; color: var(--dim); }
+.kmcur { display: flex; flex-direction: column; gap: 3px; margin-bottom: 14px; }
+.kmcur .big { font-size: 30px; font-weight: 700; line-height: 1; }
+.kmcur .big.wm { color: var(--amber); }
+.kmtabs { flex-wrap: wrap; }
+.kmtabs button { min-width: 0; padding: 6px 10px; font-size: 13px; }
+.kcgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 4px; }
+.kc { position: relative; background: #29292c; border: 1px solid #000; border-radius: 3px; color: var(--text); padding: 8px 2px; cursor: pointer; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kc:hover { background: #343438; }
+.kc.wmk { color: var(--amber); }
+.kc.on { outline: 2px solid var(--amber); }
+.kc.used::after { content: ""; position: absolute; right: 3px; top: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); }
+.target.on { outline: 2px solid var(--amber); }

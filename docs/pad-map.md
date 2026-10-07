@@ -30,7 +30,9 @@ locally; the pad reports them to the app. Firmware defaults:
 └────┴────┴────┴────┘
 ```
 
-Every control can be remapped in Vial (vial.rocks in Chrome, or the Vial desktop app). Ordinary
+Every control can be remapped on the app's **Keymap** page (same raw HID commands as Vial, saved to the pad
+immediately), or in Vial (vial.rocks in Chrome, or the Vial desktop app) with the app stopped. Vial is still
+needed for Vial macros, tap dance, combos and assigning `QK_BOOT` (those need the pad unlocked). Ordinary
 keys (e.g. F-keys for Wing Edit) and WM keys can be mixed freely. Layers 1–3 are transparent by
 default; events carry the current layer, so the app maps **(layer, WM id)** without per-layer
 keycodes. What each control *does* is set entirely in the app (macros), never here.
@@ -61,8 +63,8 @@ Pad → host, unsolicited, **only while subscribed** (so it never blocks when no
 - The app must send `F0 01` at least every 3 s (1 s recommended).
 - Don't run the app and the Vial editor against the pad on the same host at the same time.
 
-Other commands used (standard VIA/Vial): `0x11` layer count, `0x12` keymap buffer,
-`FE 03` encoder map, `07 41` / `07 42` VialRGB mode / direct LED HSV, `08 41` get mode.
+Other commands used (standard VIA/Vial): `0x11` layer count, `0x12` keymap buffer, `0x05` set key,
+`FE 03` / `FE 04` get / set encoder (the get reply has no echoed header: drain pending echoes first), `07 41` / `07 42` VialRGB mode / direct LED HSV, `08 41` get mode.
 See `tools/vialhid.py`.
 
 ## LEDs

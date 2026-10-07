@@ -8,6 +8,7 @@ const S = {
   page: "pad", layer: 0, follow: true, selectOnPress: true,
   sel: null,            // {kind:"key", idx} | {kind:"knob", knob}
   macroSel: null, consoles: null, scanning: false,
+  km: null, kmSel: null, kmSlot: "push", kmTab: "WINGMACRO", kmMods: 0, kmErr: "",
 };
 // WING strip colours 1..18 (approximate; to be checked against the console)
 const WCOL = [null, "#6f8fb8", "#2f6fe0", "#3d3fd0", "#14b9cc", "#1fbf3c", "#8db31b", "#e3cf12", "#f08a1c",
@@ -210,8 +211,11 @@ function renderPad() {
 
   const keys = h("div", { class: "keys" }, [...Array(16).keys()].map((idx) => {
     const wm = wmAt(S.layer, idx);
-    if (!wm) return h("div", { class: "key nowm", "data-idx": idx, title: "Not a WM key in Vial (ordinary key)" },
-      h("span", { class: "nm" }, "Vial key"), h("span", { class: "act" }, "not WM"));
+    if (!wm) {
+      const kc = effectiveKc(S.layer, Math.floor(idx / 4), idx % 4);
+      return h("div", { class: "key nowm", "data-idx": idx, title: "Ordinary key (set on the Keymap page)" },
+        h("span", { class: "nm" }, kc == null ? "Key" : KC.name(kc)), h("span", { class: "act" }, "not WM"));
+    }
     const { m, from } = lookup("buttons", wm, S.layer);
     const s = summary(m);
     const led = onLive && live.leds ? live.leds[idx] : null;
@@ -679,24 +683,149 @@ function renderSettings() {
     ]));
 }
 
+// ---------------------------------------------------------------------------- keymap page (Vial replacement)
+const KNOB_ENC = { left: 0, right: 1, big: 2 };
+const KNOB_PUSH = { left: [0, 4], right: [1, 4], big: [2, 4] };
+function rawKc(layer, row, col) { return S.km?.layers?.[layer]?.[row * (S.km.cols || 5) + col]; }
+function effectiveKc(layer, row, col) {
+  for (let l = layer; l >= 0; l--) { const kc = rawKc(l, row, col); if (kc == null) return null; if (kc !== 1) return kc; }
+  return 0;
+}
+function rawEnc(layer, enc, cw) { return S.km?.encoders?.[layer]?.[enc]?.[cw ? 1 : 0]; }
+function effectiveEnc(layer, enc, cw) {
+  for (let l = layer; l >= 0; l--) { const kc = rawEnc(l, enc, cw); if (kc == null) return null; if (kc !== 1) return kc; }
+  return 0;
+}
+function slotInfo(sel, slot) {                // -> {label, raw, eff, body}
+  const L = S.layer;
+  if (sel.kind === "key") {
+    const row = Math.floor(sel.idx / 4), col = sel.idx % 4;
+    return { label: `Key ${sel.idx + 1}`, raw: rawKc(L, row, col), eff: effectiveKc(L, row, col), body: { layer: L, row, col } };
+  }
+  if (slot === "push") {
+    const [row, col] = KNOB_PUSH[sel.knob];
+    return { label: "Push", raw: rawKc(L, row, col), eff: effectiveKc(L, row, col), body: { layer: L, row, col } };
+  }
+  const cw = slot === "cw", enc = KNOB_ENC[sel.knob];
+  return { label: cw ? "Turn right" : "Turn left", raw: rawEnc(L, enc, cw), eff: effectiveEnc(L, enc, cw), body: { layer: L, encoder: enc, cw } };
+}
+async function setKc(info, kc) {
+  S.kmErr = "";
+  const r = await api("/api/keymap", { method: "POST", body: JSON.stringify({ ...info.body, kc }) }).catch((e) => ({ ok: false, error: String(e) }));
+  if (!r.ok) S.kmErr = r.error;
+  await refreshMeta();
+  render();
+}
+function wmUsedOnLayer(layer) {
+  const used = new Set();
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 5; c++) { const kc = effectiveKc(layer, r, c); if (KC.isWM(kc)) used.add(kc); }
+  for (let e = 0; e < 3; e++) for (const cw of [0, 1]) { const kc = effectiveEnc(layer, e, cw); if (KC.isWM(kc)) used.add(kc); }
+  return used;
+}
+
+function renderKeymap() {
+  const ok = S.km?.connected;
+  const banks = h("div", { class: "banks" },
+    [0, 1, 2, 3].map((l) => h("button", { class: "btn light" + (S.layer === l ? " on" : ""), onclick: () => { S.layer = l; S.follow = false; render(); } }, `LAYER ${l + 1}`)),
+    h("div", { class: "follow" }, h("div", { class: "row", style: "flex-direction:column;align-items:stretch;gap:6px" },
+      toggleBtn("FOLLOW PAD", S.follow, (v) => { S.follow = v; if (v && S.live) S.layer = S.live.pad.layer; render(); }),
+      toggleBtn("SELECT ON PRESS", S.selectOnPress, (v) => { S.selectOnPress = v; render(); }))));
+  const cap = (kc) => {
+    if (kc == null) return h("span", { class: "nm" }, "?");
+    return h("span", { class: "nm kmname" + (KC.isWM(kc) ? " wm" : "") }, KC.name(kc));
+  };
+  const keys = h("div", { class: "keys" }, [...Array(16).keys()].map((idx) => {
+    const row = Math.floor(idx / 4), col = idx % 4, raw = rawKc(S.layer, row, col);
+    return h("button", { class: "key km" + (S.kmSel?.kind === "key" && S.kmSel.idx === idx ? " sel" : "") + (raw === 1 ? " inherit" : ""),
+      "data-idx": idx, onclick: () => { S.kmSel = { kind: "key", idx }; render(); } },
+      cap(raw === 1 ? effectiveKc(S.layer, row, col) : raw), raw === 1 && h("span", { class: "act" }, "▽ from below"));
+  }));
+  const knob = (k) => {
+    const enc = KNOB_ENC[k], [pr, pc] = KNOB_PUSH[k];
+    const n = (kc) => (kc == null ? "?" : KC.name(kc));
+    const el = h("button", { class: "knob kmknob" + (S.kmSel?.knob === k ? " sel" : ""), "data-knob": k,
+      onclick: () => { S.kmSel = { kind: "knob", knob: k }; if (!["push", "ccw", "cw"].includes(S.kmSlot)) S.kmSlot = "push"; render(); } },
+      dial(), h("span", { class: "kl" }, `${n(effectiveEnc(S.layer, enc, 0))} / ${n(effectiveEnc(S.layer, enc, 1))}`));
+    return el;
+  };
+  const big = knob("big"); big.className += " big";
+  const padBody = h("div", { class: "doio" }, h("div", { class: "well" }, keys), knob("left"), knob("right"), big);
+
+  let editor;
+  if (!ok) editor = h("div", { class: "editor-empty" }, "Pad not connected", h("br"), h("span", { class: "hint" }, "Plug the pad into this machine to edit its keymap."));
+  else if (!S.kmSel) editor = h("div", { class: "editor-empty" }, "Select a key or knob", h("br"), h("span", { class: "hint" }, "or press a WM key on the pad"));
+  else editor = kmEditor();
+  return h("div", { class: "cols padpage" },
+    h("section", { class: "panel" }, h("div", { class: "phead" }, "LAYERS"), banks),
+    panel("KEYMAP", h("div", { class: "padwrap" }, padBody, h("div", { class: "legend" },
+      h("span", {}, h("b", { style: "color:var(--amber)" }, "WM"), " keys are mapped on the Pad page"),
+      h("span", {}, "▽ transparent: uses the layer below"),
+      h("span", {}, "Changes save to the pad immediately")))),
+    h("section", { class: "panel" }, editor));
+}
+
+function kmEditor() {
+  const sel = S.kmSel;
+  const slots = sel.kind === "key" ? [null] : ["push", "ccw", "cw"];
+  const slot = sel.kind === "key" ? null : S.kmSlot;
+  const info = slotInfo(sel, slot);
+  const title = sel.kind === "key" ? `KEY ${sel.idx + 1}` : `${sel.knob === "big" ? "BIG" : sel.knob.toUpperCase()} KNOB`;
+  const slotBtns = sel.kind === "knob" && h("div", { class: "row", style: "margin-bottom:12px" }, slots.map((s) => {
+    const i = slotInfo(sel, s);
+    return h("button", { class: "target" + (s === slot ? " on" : ""), onclick: () => { S.kmSlot = s; render(); } },
+      h("span", { class: "tc" }, i.label.toUpperCase()), h("span", { class: "tn" }, KC.name(i.raw)));
+  }));
+  const cur = h("div", { class: "kmcur" }, h("span", { class: "big" + (KC.isWM(info.raw) ? " wm" : "") }, KC.name(info.raw)),
+    info.raw === 1 && h("span", { class: "muted" }, `Transparent: uses ${KC.name(info.eff)} from a lower layer`),
+    KC.isWM(info.raw) && h("span", { class: "muted" }, "WM key: what it does is set on the Pad page"),
+    info.raw === 0 && h("span", { class: "muted" }, "Does nothing"));
+  const used = wmUsedOnLayer(S.layer);
+  const tab = S.kmTab;
+  const group = KC.groups.find((g) => g[0] === tab) || KC.groups[0];
+  const modable = (kc) => kc >= 0x04 && kc <= 0x73;
+  const withMods = (kc) => (S.kmMods && modable(kc) ? (S.kmMods << 8) | kc : kc);
+  const grid = h("div", { class: "kcgrid" }, group[1].map((kc) => {
+    const v = withMods(kc);
+    return h("button", { class: "kc" + (v === info.raw ? " on" : "") + (KC.isWM(kc) ? " wmk" : "") + (KC.isWM(kc) && used.has(kc) ? " used" : ""),
+      title: KC.isWM(kc) && used.has(kc) ? "Already used on this layer" : "", onclick: () => setKc(info, v) }, KC.name(v));
+  }));
+  const modsRow = ["LETTERS", "F-KEYS", "EDIT / NAV", "NUMPAD"].includes(tab) && h("div", { class: "row", style: "margin-bottom:8px;gap:6px;align-items:center" },
+    h("span", { class: "muted", style: "font-size:12px;text-transform:uppercase" }, "With"),
+    KC.MODS.map(([b, n]) => h("button", { class: "btn sm" + (S.kmMods & b ? " amber" : ""), onclick: () => { S.kmMods ^= b; render(); } }, n)),
+    h("button", { class: "btn sm" + (S.kmMods & 0x10 ? " amber" : ""), onclick: () => { S.kmMods ^= 0x10; render(); } }, "Right"));
+  const hex = h("input", { type: "text", placeholder: "0x7E00", style: "width:90px" });
+  return [h("div", { class: "phead" }, `${title} · LAYER ${S.layer + 1}`),
+    h("div", { class: "pbody" },
+      slotBtns, cur,
+      S.kmErr && h("p", { style: "color:var(--red)" }, S.kmErr),
+      h("div", { class: "tabs kmtabs" }, KC.groups.map(([g]) => h("button", { class: g === tab ? "on" : "", onclick: () => { S.kmTab = g; render(); } }, g))),
+      h("div", { style: "padding-top:10px" }, modsRow, grid),
+      tab === "WINGMACRO" && h("p", { class: "hint" }, "Amber dot = already used on this layer. WM keys do nothing on their own: map them on the Pad page."),
+      h("div", { class: "row", style: "margin-top:12px;align-items:center" }, h("span", { class: "muted", style: "font-size:12px;text-transform:uppercase" }, "Any keycode"), hex,
+        h("button", { class: "btn sm", onclick: () => { const v = parseInt(hex.value, 16); if (!isNaN(v)) setKc(info, v); } }, "Set")),
+      h("p", { class: "hint" }, "Vial's own macros, tap dance, combos and the bootloader key still need Vial (with the app stopped)."))];
+}
+
 // ---------------------------------------------------------------------------- render / nav
 function render() {
   const page = $("page");
   const keepScroll = [...page.querySelectorAll(".pbody")].map((e) => e.scrollTop);
   const pageScroll = page.scrollTop;
-  page.replaceChildren(({ pad: renderPad, macros: renderMacros, console: renderConsole, settings: renderSettings })[S.page]());
+  page.replaceChildren(({ pad: renderPad, macros: renderMacros, console: renderConsole, settings: renderSettings, keymap: renderKeymap })[S.page]());
   page.querySelectorAll(".pbody").forEach((e, i) => { e.scrollTop = keepScroll[i] || 0; });
   page.scrollTop = pageScroll;
   document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.page === S.page));
   renderTop();
-  const sel = S.page === "pad" && S.sel ? `/${S.layer + 1}/${S.sel.kind === "key" ? S.sel.idx + 1 : S.sel.knob}` : "";
+  const cur = S.page === "pad" ? S.sel : S.page === "keymap" ? S.kmSel : null;
+  const sel = cur ? `/${S.layer + 1}/${cur.kind === "key" ? cur.idx + 1 : cur.knob}` : "";
   history.replaceState(null, "", `#${S.page}${sel}`);
 }
 function fromHash() {                       // #pad/2/5 = layer 2, key 5; #pad/1/left; #macros
   const [page, layer, ctl] = location.hash.slice(1).split("/");
-  if (["pad", "macros", "console", "settings"].includes(page)) S.page = page;
+  if (["pad", "macros", "console", "settings", "keymap"].includes(page)) S.page = page;
   if (layer) S.layer = +layer - 1;          // Follow pad stays on; the live layer wins once known
   if (ctl) S.sel = /^\d+$/.test(ctl) ? { kind: "key", idx: +ctl - 1 } : { kind: "knob", knob: ctl };
+  if (ctl && S.page === "keymap") { S.kmSel = S.sel; S.sel = null; }
 }
 function go(p) { S.page = p; if (p === "console" && S.consoles == null) scan(); render(); }
 document.querySelectorAll("#nav button").forEach((b) => b.addEventListener("click", () => go(b.dataset.page)));
@@ -721,6 +850,12 @@ function onLive(st) {
   for (const ev of st.events || []) {
     if (ev.type !== "key") continue;
     const knob = ev.row >= 252 ? ["left", "right"][ev.col] : ev.col === 4 && ev.row < 2 ? ["left", "right"][ev.row] : null;
+    if (S.page === "keymap" && ev.layer === S.layer && ev.pressed && S.selectOnPress && !editing()) {
+      if (ev.row >= 252) { S.kmSel = { kind: "knob", knob: ["left", "right", "big"][ev.col] }; S.kmSlot = ev.row === 253 ? "cw" : "ccw"; }
+      else if (ev.col === 4) { S.kmSel = { kind: "knob", knob: ["left", "right", "big"][ev.row] }; S.kmSlot = "push"; }
+      else S.kmSel = { kind: "key", idx: ev.row * 4 + ev.col };
+      render();
+    }
     if (S.page === "pad" && ev.layer === S.layer) {
       if (ev.pressed && S.selectOnPress && !editing()) {
         const nsel = knob ? { kind: "knob", knob } : ev.row < 4 && ev.col < 4 ? { kind: "key", idx: ev.row * 4 + ev.col } : null;
@@ -750,10 +885,10 @@ function connectWs() {
   ws.onclose = () => { S.live = null; renderTop(); setTimeout(connectWs, 1500); };
 }
 async function refreshMeta() {
-  const [strips, pad, fx] = await Promise.all([api("/api/strips"), api("/api/pad"), api("/api/fx")]).catch(() => []);
+  const [strips, pad, fx, km] = await Promise.all([api("/api/strips"), api("/api/pad"), api("/api/fx"), api("/api/keymap")]).catch(() => []);
   if (!strips) return;
-  const changed = JSON.stringify([strips, pad, fx]) !== JSON.stringify([S.strips, S.pad, S.fx]);
-  S.strips = strips; S.pad = pad; S.fx = fx;
+  const changed = JSON.stringify([strips, pad, fx, km]) !== JSON.stringify([S.strips, S.pad, S.fx, S.km]);
+  S.strips = strips; S.pad = pad; S.fx = fx; S.km = km;
   if (changed && !editing()) render();
 }
 
