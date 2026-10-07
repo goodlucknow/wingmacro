@@ -164,6 +164,20 @@ function save() {
 }
 function commit(rerender = true) { save(); if (rerender) render(); }
 
+// --- testing: run actions from the editor -----------------------------------------
+function note(text, err) {
+  const st = $("save-state"); st.className = "savestate" + (err ? " err" : ""); st.textContent = text;
+}
+async function testRun(steps, label) {
+  if (!S.live?.wing.connected && steps.some((x) => x.do !== "led" && x.do !== "wait")) note("WING not connected", true);
+  const r = await api("/api/test/steps", { method: "POST", body: JSON.stringify({ steps, src: S.testSrc || null }) }).catch((e) => ({ ok: false, error: String(e) }));
+  note(r.ok ? `Ran: ${label}` : "Run failed: " + r.error, !r.ok);
+}
+async function testKey(wm) {
+  const r = await api("/api/test/key", { method: "POST", body: JSON.stringify({ layer: S.layer, wm }) }).catch((e) => ({ ok: false, error: String(e) }));
+  note(r.ok ? `Tested WM${wm}` : "Test failed: " + r.error, !r.ok);
+}
+
 // ---------------------------------------------------------------------------- names
 function parseTarget(t) {
   if (!t) return null;
@@ -345,6 +359,7 @@ function keyEditor(idx) {
     h("button", { class: "btn amber", onclick: () => { layerCfg(S.layer, true).buttons[wm] = { trigger: "press", do: [] }; commit(); } }, "Create mapping"))];
 
   const pad = S.cfg.pad || {};
+  S.testSrc = [from, idx];                    // LED actions run from the editor light this key
   const body = h("div", { class: "pbody" },
     sect("Name", h("input", { type: "text", value: m.name || "", placeholder: summary({ ...m, name: "" }).name || "Label shown on the pad view",
       oninput: (e) => { m.name = e.target.value || undefined; commit(false); renderTop(); }, onchange: () => render() })),
@@ -369,13 +384,15 @@ function keyEditor(idx) {
       h("p", { class: "hint" }, "Plays when the key fires. Burst sends a ring of light out across the pad."),
       field("Animation colour", colourPicker(m.hold_colour, (v) => { m.hold_colour = v; }, { allowNone: true, noneLabel: "White (default)" })),
       h("p", { class: "hint" }, "Used for the fire animation and, on hold keys, the glow while held.")));
-  return [head(h("button", { class: "btn sm danger", onclick: () => { delete layerCfg(S.layer).buttons[wm]; commit(); } }, "Clear")), body];
+  return [head([h("button", { class: "btn sm light", title: "Act as if the key were pressed (toggle state, LEDs and all)", onclick: () => testKey(wm) }, "▶ Test"),
+    h("button", { class: "btn sm danger", onclick: () => { delete layerCfg(S.layer).buttons[wm]; commit(); } }, "Clear")]), body];
 }
 
 function knobEditor(knob) {
   const title = knob === "left" ? "LEFT KNOB" : "RIGHT KNOB";
   const head = (right) => h("div", { class: "phead" }, `${title} · LAYER ${S.layer + 1}`, right && h("div", { class: "right" }, right));
   const { m, from } = lookup("encoders", knob, S.layer);
+  S.testSrc = null;
   if (m && from !== S.layer) return [head(), inheritBar("encoders", knob, from, title.toLowerCase())];
   if (!m) return [head(), h("div", { class: "pbody" }, h("p", { class: "muted" }, "Not mapped on this layer."),
     h("button", { class: "btn amber", onclick: () => { layerCfg(S.layer, true).encoders[knob] = { turn: [] }; commit(); } }, "Create mapping"))];
@@ -449,7 +466,15 @@ function macroPick(name, set) {
     h("select", { onchange: (e) => { set(e.target.value); commit(); } },
       macroNames().map((n) => h("option", { value: n, selected: n === name }, n))),
     h("button", { class: "btn sm", onclick: () => { S.macroSel = name; go("macros"); } }, "Edit macro"),
+    h("button", { class: "btn sm", title: "Make a copy of this macro and use the copy here, e.g. to point it at another channel",
+      onclick: () => { if (S.cfg.macros[name]) { set(duplicateMacro(name)); commit(); } } }, "Copy"),
     h("button", { class: "btn sm ghost", onclick: () => { set(newMacro()); commit(); } }, "+ New"));
+}
+function duplicateMacro(name) {
+  let n = 2; while (S.cfg.macros[`${name} ${n}`]) n++;
+  const copy = `${name} ${n}`;
+  S.cfg.macros[copy] = clone(S.cfg.macros[name] || { steps: [] });
+  return copy;
 }
 function newMacro() {
   S.cfg.macros ||= {};
@@ -479,7 +504,8 @@ function stepList(steps, rotary) {
   groupBy(allowed).map(([g, list]) => h("optgroup", { label: g }, list.map(([k, a]) => h("option", { value: k }, a.label)))));
   return h("div", {},
     h("div", { class: "steps" }, steps.length ? steps.map((st, i) => stepRow(steps, st, i, rotary)) : h("div", { class: "hint" }, "No actions yet.")),
-    h("div", { class: "addrow" }, add));
+    h("div", { class: "addrow" }, add,
+      !rotary && steps.length > 1 && h("button", { class: "btn sm run", title: "Run the whole list now", onclick: () => testRun(steps, "all actions") }, "▶ Run all")));
 }
 function groupBy(entries) {
   const g = {}; for (const e of entries) (g[e[1].g] ||= []).push(e); return Object.entries(g);
@@ -494,6 +520,10 @@ function stepRow(steps, st, i, rotary) {
     h("div", {}, h("div", { style: "font-weight:600;text-transform:uppercase;margin-bottom:6px" }, a.label),
       h("div", { class: "row" }, fields)),
     h("div", { class: "row", style: "gap:4px;flex-wrap:nowrap" },
+      rotary
+        ? [h("button", { class: "btn sm run", title: "Turn one step down", onclick: () => testRun([{ ...st, ticks: -1 }], a.label + " −") }, "−"),
+           h("button", { class: "btn sm run", title: "Turn one step up", onclick: () => testRun([{ ...st, ticks: 1 }], a.label + " +") }, "+")]
+        : h("button", { class: "btn sm run", title: "Run this action now", onclick: () => testRun([st], a.label) }, "▶"),
       iconBtn("up", () => { if (i) { [steps[i - 1], steps[i]] = [steps[i], steps[i - 1]]; commit(); } }, "Move up"),
       iconBtn("down", () => { if (i < steps.length - 1) { [steps[i + 1], steps[i]] = [steps[i], steps[i + 1]]; commit(); } }, "Move down"),
       iconBtn("x", () => { steps.splice(i, 1); commit(); }, "Remove")));
@@ -690,18 +720,20 @@ function renderMacros() {
       h("td", {}, n), h("td", {}, (S.cfg.macros[n].steps || []).length), h("td", { class: "muted" }, macroUsers(n).join(", ") || "—")))));
   let editor;
   const mc = S.macroSel && S.cfg.macros[S.macroSel];
+  S.testSrc = null;
   if (!mc) editor = h("div", { class: "editor-empty" }, names.length ? "Select a macro" : "No macros yet");
   else {
     const users = macroUsers(S.macroSel);
     const nameIn = h("input", { type: "text", value: S.macroSel, onchange: (e) => {
       if (!renameMacro(S.macroSel, e.target.value.trim())) e.target.value = S.macroSel; commit(); } });
     editor = [h("div", { class: "phead" }, S.macroSel.toUpperCase(), h("div", { class: "right" },
+      h("button", { class: "btn sm", title: "Make a copy to edit separately", onclick: () => { S.macroSel = duplicateMacro(S.macroSel); commit(); } }, "Duplicate"),
       h("button", { class: "btn sm danger", onclick: () => {
         if (users.length && !confirm(`"${S.macroSel}" is used by ${users.join(", ")}. Delete anyway? Those controls will stop working.`)) return;
         delete S.cfg.macros[S.macroSel]; S.macroSel = null; commit(); } }, "Delete"))),
     h("div", { class: "pbody" },
       sect("Name", nameIn),
-      sect("Steps", h("p", { class: "hint" }, "A reusable list of actions. Keys run it with the Run macro action. Waits don't block other controls."), stepList(mc.steps ||= [], false)),
+      sect("Steps", h("p", { class: "hint" }, "A reusable list of actions. Keys run it with the Run macro action. Waits don't block other controls. Use Duplicate to make a variant, e.g. the same moves on another channel."), stepList(mc.steps ||= [], false)),
       sect("Used by", h("p", { class: "muted" }, users.join(", ") || "Not assigned to any control yet.")))];
   }
   return h("div", { class: "cols", style: "grid-template-columns:minmax(260px,380px) 1fr" },

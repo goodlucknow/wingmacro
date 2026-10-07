@@ -116,6 +116,26 @@ async def start_web(app, host, port):
             return web.json_response({"ok": False, "error": str(e)}, status=400)
         return web.json_response({"ok": True})
 
+    async def test_steps(req):
+        try:
+            body = await req.json()
+            steps = body["steps"]
+            if not isinstance(steps, list):
+                raise ValueError("steps must be a list")
+            app.engine.test_steps(steps, body.get("src"))
+        except (ValueError, KeyError, TypeError) as e:
+            return web.json_response({"ok": False, "error": str(e)}, status=400)
+        return web.json_response({"ok": True})
+
+    async def test_key(req):
+        try:
+            body = await req.json()
+            layer, wm = int(body["layer"]), int(body["wm"])
+            app.engine.test_key(layer, wm, app.key_index(layer, wm))
+        except (ValueError, KeyError, TypeError) as e:
+            return web.json_response({"ok": False, "error": str(e)}, status=400)
+        return web.json_response({"ok": True})
+
     async def ws(req):
         """Pushes status, LED preview and new pad events about 10x a second."""
         sock = web.WebSocketResponse(heartbeat=20)
@@ -161,7 +181,7 @@ async def start_web(app, host, port):
         web.get("/api/fx", fx_list), web.get("/api/fx/{slot}", fx_params),
         web.get("/api/scan", scan), web.post("/api/console", set_console),
         web.get("/api/keymap", keymap), web.post("/api/keymap", set_keycode),
-        web.post("/api/pad/layer", pad_layer), web.get("/api/pad/backup", backup), web.post("/api/pad/restore", restore),
+        web.post("/api/pad/layer", pad_layer), web.post("/api/test/steps", test_steps), web.post("/api/test/key", test_key), web.get("/api/pad/backup", backup), web.post("/api/pad/restore", restore),
         web.get("/api/vial", vial_get), web.get("/api/vial/unlock", vial_status),
         web.post("/api/vial/unlock", vial_action(_unlock)), web.post("/api/vial/lock", vial_action(_lock)),
         web.post("/api/vial/{kind}", vial_action(_set)),

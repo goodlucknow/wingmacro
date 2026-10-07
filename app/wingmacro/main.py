@@ -62,6 +62,16 @@ class App:
     async def set_pad_layer(self, layer):
         await self._pad_call(self.pad.set_layer, int(layer))
 
+    def key_index(self, layer, wm):
+        """LED index of the key holding WM `wm` on `layer` (from the pad keymap; default wm - 1)."""
+        p = self.pad
+        if p and p.keymap:
+            for i in range(16):
+                if p.key_wm(layer, i) == wm:
+                    return i
+            return None
+        return wm - 1 if wm <= 16 else None
+
     def keymap(self):
         p = self.pad
         return {"connected": bool(p and p.connected and p.keymap), "cols": 5,

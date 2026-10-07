@@ -213,6 +213,29 @@ class Engine:
             if s.get("do") == "fade" and s.get("db") != "back":
                 await ACTIONS["fade"](self.ctx, dict(s, db="back", wait=False))
 
+    # --- testing from the UI --------------------------------------------------
+
+    def test_steps(self, steps, src=None):
+        """Run actions straight away (the UI's run buttons). `src` = (layer, key index) for LED actions."""
+        self.run(steps, ("test", id(steps)), src=tuple(src) if src else None)
+
+    def test_key(self, layer, wm, idx):
+        """Act as if the key were pressed: toggle state, LED animations and all. Hold keys fire at once;
+        momentary keys are held for a second."""
+        l, m = self.button_map(wm, layer)
+        if not m:
+            raise ValueError(f"WM{wm} isn't mapped on layer {layer + 1}")
+        st = {"phase": "pressed", "map": m, "layer": l, "wm": wm, "idx": m.get("led_index", idx), "t0": time.monotonic()}
+        if m.get("trigger") == "momentary":
+            self._led(st, "confirm")
+            self._momentary_start(st)
+            asyncio.get_running_loop().call_later(1.0, lambda: asyncio.create_task(self._momentary_end(st)))
+        elif m.get("trigger") == "hold":
+            self._led(st, "confirm")
+            self.fire(st)
+        else:
+            self.fire(st)
+
     def _led(self, st, kind, dur=None):
         if self.leds and st.get("idx") is not None:
             self.leds.transient(st["idx"], kind, dur, st["map"])
