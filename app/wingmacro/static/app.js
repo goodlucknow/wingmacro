@@ -232,13 +232,10 @@ function renderPad() {
       onclick: () => { S.sel = { kind: "knob", knob: k }; render(); } },
       dial(), h("span", { class: "kl" }, m ? (m.name || rotSummary(m.turn) || "Knob") : "—"));
   };
-  const oled = h("div", { class: "oled", title: "OLED: shows the layer" }, h("span", { class: "ow" }, h("span", { class: "logo-wing" })),
-    h("span", { class: "ol" }, (live?.pad.connected ? live.pad.layer : S.layer) + 1));
   const padBody = h("div", { class: "doio" },
     h("div", { class: "well" }, keys),
     h("div", { class: "side" },
       h("div", { class: "smallknobs" }, knob("left"), knob("right")),
-      oled,
       h("div", { class: "bigknob", title: "Big knob: mouse wheel on every layer (not mapped here)" }, h("i"), h("span", {}, "SCROLL"))),
     h("div", { class: "doiomark" }, "DOIO"));
   const legend = h("div", { class: "legend" },
