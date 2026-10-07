@@ -14,7 +14,7 @@ def _status(app):
     w, p = app.wing, app.pad
     return {
         "wing": {"connected": w.connected, "host": w.host, "info": w.info},
-        "pad": {"connected": bool(p and p.connected), "layer": app.engine.layer},
+        "pad": {"connected": bool(p and p.connected), "layer": app.engine.layer, "proto": p.proto if p else 0},
         "fx": {k: v for k, v in app.ctx.fx_models.items() if v and v != "NONE"},
         "tap_ms": {",".join(map(str, k)): v["ms"] for k, v in app.ctx.taps.items()},
     }
@@ -96,6 +96,25 @@ async def start_web(app, host, port):
     async def _lock(_): await app.vial_lock()
     async def _set(req): await app.vial_set(req.match_info["kind"], await req.json())
 
+    async def backup(_):
+        try:
+            return web.json_response(await app.pad_backup())
+        except (ValueError, OSError) as e:
+            return web.json_response({"error": str(e)}, status=400)
+
+    async def restore(req):
+        try:
+            return web.json_response(dict(await app.pad_restore(await req.json()), ok=True))
+        except (ValueError, KeyError, TypeError, OSError) as e:
+            return web.json_response({"ok": False, "error": str(e)}, status=400)
+
+    async def pad_layer(req):
+        try:
+            await app.set_pad_layer((await req.json())["layer"])
+        except (ValueError, KeyError, TypeError, OSError) as e:
+            return web.json_response({"ok": False, "error": str(e)}, status=400)
+        return web.json_response({"ok": True})
+
     async def ws(req):
         """Pushes status, LED preview and new pad events about 10x a second."""
         sock = web.WebSocketResponse(heartbeat=20)
@@ -133,6 +152,7 @@ async def start_web(app, host, port):
         web.get("/api/fx", fx_list), web.get("/api/fx/{slot}", fx_params),
         web.get("/api/scan", scan), web.post("/api/console", set_console),
         web.get("/api/keymap", keymap), web.post("/api/keymap", set_keycode),
+        web.post("/api/pad/layer", pad_layer), web.get("/api/pad/backup", backup), web.post("/api/pad/restore", restore),
         web.get("/api/vial", vial_get), web.get("/api/vial/unlock", vial_status),
         web.post("/api/vial/unlock", vial_action(_unlock)), web.post("/api/vial/lock", vial_action(_lock)),
         web.post("/api/vial/{kind}", vial_action(_set)),

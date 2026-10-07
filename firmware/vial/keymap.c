@@ -94,7 +94,7 @@ const uint16_t PROGMEM encoder_map[][NUM_ENCODERS][NUM_DIRECTIONS] = {
  * Encoder ticks report press only (row KEYLOC_ENCODER_CW = 253, CCW = 252,
  * col = encoder index).
  */
-#define WM_PROTO 1
+#define WM_PROTO 2
 #define WM_SUBSCRIBE_MS 3000
 #define WM_CMD 0xF0
 #define WM_EVT 0xF1
@@ -137,6 +137,10 @@ void raw_hid_receive_kb(uint8_t *data, uint8_t length) {
             break;
         case 0x03:
             wm_subscribed = false;
+            break;
+        case 0x04: /* set layer (like TO): F0 04 <layer> */
+            if (data[2] < 4) layer_move(data[2]);
+            wm_fill_state(data);
             break;
         default:
             data[0] = id_unhandled;

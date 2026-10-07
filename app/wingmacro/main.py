@@ -59,6 +59,9 @@ class App:
             return {"known": False, "layers": [[i + 1 for i in range(16)] for _ in range(4)]}
         return {"known": True, "layers": [[p.key_wm(l, i) for i in range(16)] for l in range(len(p.keymap))]}
 
+    async def set_pad_layer(self, layer):
+        await self._pad_call(self.pad.set_layer, int(layer))
+
     def keymap(self):
         p = self.pad
         return {"connected": bool(p and p.connected and p.keymap), "cols": 5,
@@ -149,6 +152,52 @@ class App:
             macros = body["macros"]
             await self._pad_call(p.set_macro_buffer, vialmacro.encode(macros))
             self.vial["macros"] = macros
+
+    # --- pad backup / restore (everything Vial stores in the pad's EEPROM) -------------
+
+    async def pad_backup(self):
+        st = await self.vial_state(reload=True)
+        if not st.get("connected"):
+            raise ValueError("pad not connected")
+        p = self.pad
+        return {"kind": "wingmacro-pad-backup", "version": 1, "keymap": p.keymap, "encoders": p.encmap,
+                "tap_dance": st["tap_dance"], "combos": st["combos"], "macros": st["macros"]}
+
+    async def pad_restore(self, b):
+        """Write a backup to the pad. Macros are skipped (with a note) unless the pad is unlocked."""
+        if b.get("kind") != "wingmacro-pad-backup":
+            raise ValueError("not a wingmacro pad backup")
+        p = self.pad
+
+        def write():
+            n = 0
+            for l, keys in enumerate(b["keymap"][:len(p.keymap)]):
+                for i, kc in enumerate(keys):
+                    if kc != p.keymap[l][i] and kc != 0x7C00:
+                        p.set_key(l, i // 5, i % 5, kc); n += 1
+            for l, encs in enumerate(b["encoders"][:len(p.encmap)]):
+                for e, pair in enumerate(encs):
+                    for cw, kc in enumerate(pair):
+                        if kc != p.encmap[l][e][cw]:
+                            p.set_encoder(l, e, cw, kc); n += 1
+            for i, td in enumerate(b.get("tap_dance", [])):
+                if i < len(self.vial["tap_dance"]) and td != self.vial["tap_dance"][i]:
+                    p.set_tap_dance(i, td); n += 1
+            for i, c in enumerate(b.get("combos", [])):
+                if i < len(self.vial["combos"]) and c != self.vial["combos"][i]:
+                    p.set_combo(i, c); n += 1
+            return n
+        await self.vial_state(reload=True)
+        changed = await self._pad_call(write)
+        note = ""
+        if b.get("macros") and b["macros"] != self.vial["macros"]:
+            if self.unlock.get("unlocked"):
+                await self._pad_call(p.set_macro_buffer, vialmacro.encode(b["macros"]))
+                changed += 1
+            else:
+                note = "Key macros not restored: unlock the pad and restore again."
+        self.vial = None
+        return {"changed": changed, "note": note}
 
     async def set_console(self, ip):
         cfg = dict(self.cfg, console=dict(self.cfg.get("console", {}), ip=ip or ""))

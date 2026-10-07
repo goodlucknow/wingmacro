@@ -41,7 +41,7 @@ keycodes. What each control *does* is set entirely in the app (macros), never he
 **Reflashing resets Vial edits** (VIA's EEPROM magic is the build date). Bake anything worth
 keeping into `firmware/vial/` defaults, or save a `.vil` in Vial first.
 
-## Raw HID protocol (WM_PROTO 1)
+## Raw HID protocol (WM_PROTO 2)
 
 Host → pad (reply echoes the request id, like VIA):
 
@@ -50,6 +50,7 @@ Host → pad (reply echoes the request id, like VIA):
 | `F0 01` | hello / keepalive: enable events for 3 s | `F0 01 <proto> <layer> <layer_state lo> <hi>` |
 | `F0 02` | get state (doesn't subscribe) | same as above |
 | `F0 03` | unsubscribe | — |
+| `F0 04 <layer>` | switch to layer 0–3 (like `TO`); a layer event follows. Proto ≥ 2 | same as `F0 01` |
 
 Pad → host, unsolicited, **only while subscribed** (so it never blocks when nobody listens):
 

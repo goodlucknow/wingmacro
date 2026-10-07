@@ -38,6 +38,7 @@ class Pad:
         self.dev = None
         self.connected = False
         self.layer = 0
+        self.proto = 0
         self.keymap = []  # [layer][row*COLS+col] -> keycode
         self.encmap = []  # [layer][encoder 0..2] -> [ccw, cw]
         self.events = asyncio.Queue()
@@ -190,9 +191,16 @@ class Pad:
 
     def _hello(self):
         r = self.cmd(0xF0, 0x01)
+        self.proto = r[2]
         if r[3] != self.layer:
             self.layer = r[3]
             self._emit({"type": "layer", "layer": r[3]})
+
+    def set_layer(self, layer):
+        """Move the pad to `layer` (firmware WM_PROTO >= 2)."""
+        if self.proto < 2:
+            raise PadError("pad firmware is too old to set the layer (reflash needed)")
+        self.cmd(0xF0, 0x04, layer)
 
     def unsubscribe(self):
         self.send(0xF0, 0x03)

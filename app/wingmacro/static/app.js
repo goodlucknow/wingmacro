@@ -202,11 +202,11 @@ function renderPad() {
   const banks = h("div", { class: "banks" },
     [0, 1, 2, 3].map((l) => h("button", {
       class: "btn light" + (S.layer === l ? " on" : ""),
-      onclick: () => { S.layer = l; S.follow = false; render(); },
+      onclick: () => pickLayer(l),
     }, `LAYER ${l + 1}`)),
     h("div", { class: "follow" },
       h("div", { class: "row", style: "flex-direction:column;align-items:stretch;gap:6px" },
-        toggleBtn("FOLLOW PAD", S.follow, (v) => { S.follow = v; if (v && live) S.layer = live.pad.layer; render(); }),
+        toggleBtn("LINK TO PAD", S.follow, (v) => { S.follow = v; if (v && live) S.layer = live.pad.layer; render(); }),
         toggleBtn("SELECT ON PRESS", S.selectOnPress, (v) => { S.selectOnPress = v; render(); }))));
 
   const keys = h("div", { class: "keys" }, [...Array(16).keys()].map((idx) => {
@@ -250,6 +250,17 @@ function renderPad() {
     h("section", { class: "panel" }, h("div", { class: "phead" }, "LAYERS"), banks),
     panel("PAD", h("div", { class: "padwrap" }, padBody, legend)),
     h("section", { class: "panel" }, editorFor()));
+}
+// Layer tabs: when linked to the pad, picking a layer also moves the pad (and vice versa).
+async function pickLayer(l) {
+  S.layer = l;
+  if (S.follow && S.live?.pad.connected) {
+    if ((S.live.pad.proto || 0) >= 2) {
+      const r = await api("/api/pad/layer", { method: "POST", body: JSON.stringify({ layer: l }) }).catch(() => ({ ok: false }));
+      if (r.ok) S.live.pad.layer = l;
+    } else S.follow = false;        // old firmware: can't move the pad, so unlink instead
+  }
+  render();
 }
 function toggleBtn(label, on, set) {      // WING-style labelled switch
   return h("button", { class: "switch" + (on ? " on" : ""), onclick: () => set(!on) },
@@ -653,6 +664,16 @@ function renderSettings() {
     e.target.value = "";
   } });
   const raw = h("textarea", { class: "raw", spellcheck: "false" }, JSON.stringify(S.cfg, null, 2));
+  const padFile = h("input", { type: "file", accept: ".json,application/json", hidden: true, onchange: async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    try {
+      const r = await api("/api/pad/restore", { method: "POST", body: await f.text() });
+      if (!r.ok) throw new Error(r.error);
+      alert(`Restored: ${r.changed} change(s) written to the pad.${r.note ? "\n" + r.note : ""}`);
+      S.vial = null; refreshMeta();
+    } catch (err) { alert("Restore failed: " + err.message); }
+    e.target.value = "";
+  } });
   return h("div", { class: "cols", style: "grid-template-columns:1fr 1fr;grid-auto-rows:min-content" },
     panel("PAD", [
       sect("Background colour", h("p", { class: "hint" }, "Shown on every key without an active state. Default matches the case."),
@@ -671,6 +692,16 @@ function renderSettings() {
             a.click(); URL.revokeObjectURL(a.href);
           } }, "Export"),
           h("button", { class: "btn", onclick: () => file.click() }, "Import…"), file)),
+      sect("Pad backup", h("p", { class: "hint" }, "Everything stored on the pad itself: keymap, knobs, key macros, tap dance, combos. Reflashing the firmware wipes these, so back up first and restore after."),
+        h("div", { class: "row" },
+          h("button", { class: "btn light", onclick: async () => {
+            const r = await fetch("/api/pad/backup"); const b = await r.json();
+            if (!r.ok) { alert("Backup failed: " + b.error); return; }
+            const a = h("a", { href: URL.createObjectURL(new Blob([JSON.stringify(b, null, 1)], { type: "application/json" })),
+              download: `kb16-pad-${new Date().toISOString().slice(0, 10)}.json` });
+            a.click(); URL.revokeObjectURL(a.href);
+          } }, "Back up pad"),
+          h("button", { class: "btn", onclick: () => padFile.click() }, "Restore to pad…"), padFile)),
       sect("Advanced: raw config", h("p", { class: "hint" }, "Schema: docs/config-model.md"), raw,
         h("div", { class: "row", style: "margin-top:6px" }, h("button", { class: "btn", onclick: async () => {
           try {
@@ -726,9 +757,9 @@ function wmUsedOnLayer(layer) {
 function renderKeymap() {
   const ok = S.km?.connected;
   const banks = h("div", { class: "banks" },
-    [0, 1, 2, 3].map((l) => h("button", { class: "btn light" + (S.layer === l ? " on" : ""), onclick: () => { S.layer = l; S.follow = false; render(); } }, `LAYER ${l + 1}`)),
+    [0, 1, 2, 3].map((l) => h("button", { class: "btn light" + (S.layer === l ? " on" : ""), onclick: () => pickLayer(l) }, `LAYER ${l + 1}`)),
     h("div", { class: "follow" }, h("div", { class: "row", style: "flex-direction:column;align-items:stretch;gap:6px" },
-      toggleBtn("FOLLOW PAD", S.follow, (v) => { S.follow = v; if (v && S.live) S.layer = S.live.pad.layer; render(); }),
+      toggleBtn("LINK TO PAD", S.follow, (v) => { S.follow = v; if (v && S.live) S.layer = S.live.pad.layer; render(); }),
       toggleBtn("SELECT ON PRESS", S.selectOnPress, (v) => { S.selectOnPress = v; render(); }))));
   const cap = (kc) => {
     if (kc == null) return h("span", { class: "nm" }, "?");
