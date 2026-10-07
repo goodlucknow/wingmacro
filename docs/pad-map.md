@@ -39,8 +39,8 @@ to an ordinary keycode is simply invisible to the app.
 ## Layers
 
 Firmware layer 0 holds everything; layers 1–3 are transparent (big knob stays wheel).
-Big knob push cycles layers (firmware default). The OLED shows a "WING" wordmark with 2×2
-dots; the filled dot is the active layer (TL=0, TR=1, BL=2, BR=3). Read the live keymap with
+Big knob push cycles layers (firmware default). The OLED shows the WING logo and the layer
+number (1–4, i.e. firmware layer + 1) dark on a bright box. Read the live keymap with
 `tools/vialhid.py dump`.
 
 **Reflashing resets Vial edits** (VIA's EEPROM magic is the build date). Bake anything worth

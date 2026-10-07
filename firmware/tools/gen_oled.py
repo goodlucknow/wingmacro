@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
 """Generate firmware/vial/oled_frames.h: 128x32 OLED frames, one per layer.
 
-Each frame = WING logo on the left + 2x2 layer dots on the right
-(filled = active layer; order: top-left, top-right, bottom-left, bottom-right).
+Each frame = WING logo on the left + layer number (1-4) shown dark on a bright
+rounded box on the right.
 
 Usage: .venv/bin/python firmware/tools/gen_oled.py [--preview]
-Needs Pillow.
+Needs Pillow and DejaVuSans-Bold.ttf.
 """
 import os
 import sys
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 W, H = 128, 32
 LOGO = os.path.join(os.path.dirname(__file__), "wing_logo.png")
 THRESHOLD = 140  # grey level below which a logo pixel is lit
 TEXT_BOX = (0, 0, 98, H)  # area the wordmark is centred in
-DOT_D, DOT_GAP = 10, 3    # dot size and gap between dots
-DOT_R = 2                 # corner radius of the layer squares
+BOX_W, BOX_H, BOX_R = 24, 30, 3  # layer-number box size and corner radius
+DIGIT_PX = 24                    # digit font size
+FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 OUT = os.path.join(os.path.dirname(__file__), "..", "vial", "oled_frames.h")
 
 
@@ -34,16 +35,17 @@ def wordmark():
 
 
 def frame(layer):
+    """Logo + layer number (1-4) cut out of a bright rounded box on the right."""
     img = wordmark()
     d = ImageDraw.Draw(img)
-    grid = 2 * DOT_D + DOT_GAP
-    gx = W - grid - 3
-    gy = (H - grid) // 2
-    for i in range(4):
-        cx = gx + (i % 2) * (DOT_D + DOT_GAP)
-        cy = gy + (i // 2) * (DOT_D + DOT_GAP)
-        box = (cx, cy, cx + DOT_D - 1, cy + DOT_D - 1)
-        d.rounded_rectangle(box, radius=DOT_R, fill=1 if i == layer else 0, outline=1)
+    box = (W - BOX_W - 2, (H - BOX_H) // 2, W - 3, (H + BOX_H) // 2 - 1)
+    d.rounded_rectangle(box, radius=BOX_R, fill=1)
+    font = ImageFont.truetype(FONT, DIGIT_PX)
+    text = str(layer + 1)
+    l, t, r, b = d.textbbox((0, 0), text, font=font)
+    x = box[0] + (box[2] - box[0] + 1 - (r - l)) // 2 - l
+    y = box[1] + (box[3] - box[1] + 1 - (b - t)) // 2 - t
+    d.text((x, y), text, font=font, fill=0)
     return img
 
 
