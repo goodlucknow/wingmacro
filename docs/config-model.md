@@ -7,12 +7,12 @@ Firmware details are in `pad-map.md`. This file defines what the app does with t
 
 - A control is identified by **(layer, WM id)**: layer 0–3, WM id 1–32. Key position doesn't matter for lookup.
 - **Button**: any WM id that sends press and release. Keys and knob pushes are buttons.
-- **Encoder**: a group of WM ids `{ccw, cw, push?}`, declared once in `encoders`. The defaults are
-  `left = {ccw: 19, cw: 20, push: 17}` and `right = {ccw: 21, cw: 22, push: 18}`. If the user remaps
-  WM ids in Vial, they edit this group.
+- **Encoder**: `left` or `right`, identified from the event's position, not its WM id. Turns report
+  row 253/252 (CW/CCW) with col = knob index. Pushes are keys (0,4) and (1,4). Any WM id on a knob works,
+  and nothing has to be declared in the config.
 - **Push as modifier**: an encoder mapping has `turn`, plus optional `push_turn` (used while the push is
   held) and `push` (a button mapping). `push` fires on release only if no turn happened during the hold.
-- **Layer fallback**: if (layer, id) has no mapping, the app tries lower layers, down to layer 0.
+- **Layer fallback** (decided): if (layer, id) has no mapping, the app tries lower layers, down to layer 0.
   So layer 0 holds the common mappings and higher layers override only what they change.
 - **LED index**: comes from the pad's keymap (`0x12`), read at connect, plus row/col from events.
   A mapping never has to state its LED, but `led_index` can override it.
@@ -29,17 +29,23 @@ Firmware details are in `pad-map.md`. This file defines what the app does with t
 
 ## Trigger modes (buttons)
 
-A button mapping has any of the following:
+A key has **one** trigger, `press` or `hold`. Both **fire on release**.
 
-| Key | Fires |
+| Trigger | Behaviour |
 |---|---|
-| `press` | on press |
-| `release` | on release (`press` + `release` together = momentary, e.g. talkback-style mute while held) |
-| `hold: {ms, do}` | after the key has been held for `ms`. Releasing earlier cancels. |
+| `"press"` | Fires on release. |
+| `"hold"`, `hold_ms` (default 800) | Must be held for `hold_ms`; releasing earlier does nothing. Once the hold time is reached, the release **arms** the key. Then any press of the same key within `cancel_ms` (default 400) **cancels** it, so a tap or double tap works. If nothing is pressed in that time, it fires. The firing is delayed by `cancel_ms`, which is accepted. |
 
-While a `hold` is pending, the key's LED fills from the background colour to the target colour over `ms`.
-When it fires, the LED flashes 3× and then returns to its state colour. Releasing early snaps the LED back.
-The app times the hold from the press and release events.
+Each key has one of two kinds of action, set by `do`:
+- `"do": <macro>` fires the same macro every time.
+- `"do": {"toggle": [<macro A>, <macro B>]}` alternates between A and B. The app keeps the A/B state and the LED shows it.
+  Actions that already toggle (e.g. `mute op: toggle`) don't need this.
+
+LED feedback for `hold`:
+- While held: the key fills from the background colour to the target colour.
+- Armed: fast flash for the length of `cancel_ms`.
+- Fired: 3 flashes, then back to the state colour.
+- Cancelled, or released too early: snaps back to the state colour.
 
 ## LED rules
 
@@ -74,36 +80,31 @@ Every fader-type target follows the same floor rules.
 | Action | Params | Kind | Notes |
 |---|---|---|---|
 | `mute` | `target`, `op: toggle\|on\|off` | button | |
-| `softmute` | `target`, `op: toggle\|down\|up`, `time` (s), `curve: perceptual` | button | Fades down to −90 dB and then mutes. Fading up unmutes, starts at −89.5 dB and returns to the stored level. Never finishes early. A new fade on the same target takes over from the current level. |
+| `softmute` | `target`, `op: toggle\|down\|up`, `time` (s) | button | An app feature; the WING has no soft mute. **Down**: perceptual fade to −90 dB, then mute. **Up**: unmute, start at −89.5 dB, perceptual fade to **0 dB**. No stored return level. Never finishes early. A new fade on the same target takes over from the current level. |
 | `mgrp` | `n` 1–8, `op` | button | |
 | `level` | `target`, `step` (dB, default 0.1) | rotary | Stepping up from −∞ jumps to −89.53 dB. Stepping down past −90 dB snaps to −∞. Reads the value back. |
+| `gain` | `target` (`ch/N`), `step` (dB, default 0.5) | rotary | Input gain of the channel's source (`/ch/N/in/set/$g` → `/io/in/...`). The path needs checking on hardware. |
 | `level_set` | `target`, `db` (number or `"-inf"`) | button | |
 | `fx` | `slot`, `param`, `step?` | rotary | The default step depends on the type (int 1, linf 0.01/0.1, fader 0.1 dB). logf steps are proportional to the value, about 1% by default. Skipped silently if the parameter isn't present in the current mode. |
 | `fx_cycle` | `slot`, `param`, `dir: next\|prev` | button | For `str` params. Can also be used as a rotary. |
 | `fx_set` | `slot`, `param`, `value` | button | |
-| `tap` | — | button | Averages the taps and resets after a gap of 2 s or more. Writes `/fx/X/time` to every slot in `tap_tempo.slots`, each with its own multiplier. |
+| `tap` | `slots?` | button | Averages the taps and resets after a gap of 2 s or more. Writes `/fx/X/time` to the targeted slots: `slots` on the action, or else `tap_tempo.slots`, each with its own multiplier (1/8–2×). The WING exposes no global tempo in protocol v3.1 (only the surface's Tap Tempo Flash setting), so it's per slot only; to be confirmed on the console. |
 | `refresh` | — | button | Reconnects if needed, polls state and rescans the FX slots (and so the delays). |
 | `wait` | `ms` | step | |
-| `set` | `path`, `value` | button | Raw native/OSC-path escape hatch. |
+| `set` | `path`, `value` | button | Advanced: writes any WING parameter by path, for things the library doesn't cover yet. |
 
 Rotary acceleration is set per encoder mapping as `accel: off | fine | normal` (presets, default `fine`).
 At slow speeds each tick is exactly one step. Faster turning multiplies the *number* of steps; the step size never changes.
 
 ## File format
 
-**JSON**, in the per-OS config directory (`wingmacro.json`), written atomically with a `.bak` copy.
-I chose JSON over YAML because the web UI rewrites the file (YAML comments wouldn't survive), and JSON
-needs no extra dependency.
+**JSON** (decided), in the per-OS config directory (`wingmacro.json`), written atomically with a `.bak` copy.
 
 ```json
 {
   "version": 1,
   "console": { "ip": "192.168.1.62", "discover": true },
   "pad": { "background": [22, 255, 47] },
-  "encoders": {
-    "left":  { "ccw": 19, "cw": 20, "push": 17 },
-    "right": { "ccw": 21, "cw": 22, "push": 18 }
-  },
   "tap_tempo": { "slots": { "3": 1, "4": 0.5 } },
   "macros": {
     "band_out": {
@@ -113,26 +114,31 @@ needs no extra dependency.
         { "do": "wait", "ms": 2000 },
         { "do": "mgrp", "n": 2, "op": "on" }
       ]
-    }
+    },
+    "band_in": { "steps": [
+        { "do": "mgrp", "n": 2, "op": "off" },
+        { "do": "softmute", "target": "dca/1", "op": "up", "time": 10 }
+    ] }
   },
   "layers": {
     "0": {
       "buttons": {
-        "1":  { "press": [{ "do": "mute", "target": "ch/1", "op": "toggle" }] },
-        "2":  { "press": [{ "do": "softmute", "target": "main/1", "op": "toggle", "time": 5 }] },
-        "4":  { "hold": { "ms": 800, "do": "band_out" }, "led": { "bind": "softmute:dca/1", "on": "red", "off": "green" } },
-        "13": { "press": [{ "do": "tap" }] },
-        "16": { "press": [{ "do": "refresh" }], "led": { "bind": "connected", "on": "off", "off": "red" } }
+        "1":  { "trigger": "press", "do": [{ "do": "mute", "target": "ch/1", "op": "toggle" }] },
+        "2":  { "trigger": "press", "do": [{ "do": "softmute", "target": "main/1", "op": "toggle", "time": 5 }] },
+        "4":  { "trigger": "hold", "hold_ms": 800, "do": { "toggle": ["band_out", "band_in"] },
+                "led": { "bind": "softmute:dca/1", "on": "red", "off": "green" } },
+        "13": { "trigger": "press", "do": [{ "do": "tap" }] },
+        "16": { "trigger": "press", "do": [{ "do": "refresh" }], "led": { "bind": "connected", "on": "off", "off": "red" } }
       },
       "encoders": {
         "left":  { "turn": [{ "do": "level", "target": "main/1" }],
                    "push_turn": [{ "do": "level", "target": "ch/1/send/3" }],
-                   "push": { "press": [{ "do": "level_set", "target": "main/1", "db": 0 }] } },
+                   "push": { "trigger": "press", "do": [{ "do": "level_set", "target": "main/1", "db": 0 }] } },
         "right": { "turn": [{ "do": "fx", "slot": 3, "param": "time" }], "accel": "normal" }
       }
     },
     "1": {
-      "buttons": { "1": { "press": [{ "do": "mute", "target": "ch/9", "op": "toggle" }] } }
+      "buttons": { "1": { "trigger": "press", "do": [{ "do": "mute", "target": "ch/9", "op": "toggle" }] } }
     }
   }
 }
@@ -142,9 +148,4 @@ Layer 1 here overrides only WM01. Everything else falls back to layer 0.
 
 ## Open questions
 
-1. Should layer fallback be on (as drafted), or should each layer be fully independent?
-2. Tap vs long-press on the same key (`press` short + `hold` long), or keep `hold` exclusive as drafted?
-3. Should tap-tempo multipliers be per slot (as drafted) or one global multiplier?
-4. JSON is OK? (YAML would only be worth it if you plan to hand-edit with comments.)
-5. Should soft-mute "stored level" survive an app restart (persisted to a state file), or be re-read from the console?
-6. Is a raw `set` action OK as an escape hatch for paths the library doesn't cover yet?
+1. Should the `hold` cancel window default to 400 ms? A shorter window fires sooner but is harder to hit.
