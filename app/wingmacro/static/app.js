@@ -10,9 +10,9 @@ const S = {
   macroSel: null, consoles: null, scanning: false,
   km: null, kmSel: null, kmSlot: "push", kmTab: "WINGMACRO", kmMods: 0, kmErr: "",
 };
-// WING strip colours 1..18 (approximate; to be checked against the console)
-const WCOL = [null, "#6f8fb8", "#2f6fe0", "#3d3fd0", "#14b9cc", "#1fbf3c", "#8db31b", "#e3cf12", "#f08a1c",
-  "#e5243b", "#f26a5e", "#ee3bd0", "#9a4fe0", "#8f979f", "#79c9f2", "#7fe39d", "#f2e07a", "#f6ae6c", "#f58fb3"];
+// WING strip colours 1..18, sampled from Wing Edit (2026-10-07). 13-18 display like 12.
+const WCOL = [null, "#203a64", "#00527f", "#23007f", "#00686a", "#005f1f", "#414c00", "#736b00", "#5e310d",
+  "#720020", "#7f2f2f", "#7f007e", "#4f007f", "#4f007f", "#4f007f", "#4f007f", "#4f007f", "#4f007f", "#4f007f"];
 const PALETTE = { red: [0, 255, 200], orange: [16, 255, 200], amber: [24, 255, 200], yellow: [43, 255, 200],
   green: [85, 255, 200], cyan: [128, 255, 200], blue: [170, 255, 200], purple: [191, 255, 200],
   magenta: [213, 255, 200], white: [0, 0, 200], off: [0, 0, 0] };
