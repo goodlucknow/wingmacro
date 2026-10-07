@@ -1,38 +1,34 @@
 #!/usr/bin/env python3
 """Generate firmware/vial/oled_frames.h: 128x32 OLED frames, one per layer.
 
-Each frame = "WING" wordmark on the left + 2x2 layer dots on the right
+Each frame = WING logo on the left + 2x2 layer dots on the right
 (filled = active layer; order: top-left, top-right, bottom-left, bottom-right).
 
 Usage: .venv/bin/python firmware/tools/gen_oled.py [--preview]
-Needs Pillow and DejaVuSans-Bold.ttf.
+Needs Pillow.
 """
 import os
 import sys
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 W, H = 128, 32
-FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+LOGO = os.path.join(os.path.dirname(__file__), "wing_logo.png")
+THRESHOLD = 140  # grey level below which a logo pixel is lit
 TEXT_BOX = (0, 0, 98, H)  # area the wordmark is centred in
 DOT_D, DOT_GAP = 10, 3    # dot diameter and gap between dots
 OUT = os.path.join(os.path.dirname(__file__), "..", "vial", "oled_frames.h")
 
 
 def wordmark():
-    img = Image.new("1", (W, H), 0)
-    d = ImageDraw.Draw(img)
+    """WING logo (cropped from the protocol PDF cover) scaled into TEXT_BOX."""
+    logo = Image.open(LOGO).convert("L")
     x0, y0, x1, y1 = TEXT_BOX
-    size = 40
-    while True:
-        font = ImageFont.truetype(FONT, size)
-        l, t, r, b = d.textbbox((0, 0), "WING", font=font)
-        if r - l <= (x1 - x0) - 4 and b - t <= (y1 - y0) - 6:
-            break
-        size -= 1
-    x = x0 + ((x1 - x0) - (r - l)) // 2 - l
-    y = y0 + ((y1 - y0) - (b - t)) // 2 - t
-    d.text((x, y), "WING", font=font, fill=1)
+    scale = min((x1 - x0 - 4) / logo.width, (y1 - y0 - 6) / logo.height)
+    w, h = round(logo.width * scale), round(logo.height * scale)
+    small = logo.resize((w, h), Image.LANCZOS).point(lambda v: 255 if v < THRESHOLD else 0, "1")
+    img = Image.new("1", (W, H), 0)
+    img.paste(small, (x0 + (x1 - x0 - w) // 2, y0 + (y1 - y0 - h) // 2))
     return img
 
 
