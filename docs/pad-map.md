@@ -1,52 +1,76 @@
 # Pad map (firmware ↔ app contract)
 
-All MIDI on **channel 1**, velocity 127; note-off is a real `0x80` message.
-Verified on hardware 2026-10-07 (keys, knob pushes, knob directions; big knob sends no MIDI). Keys send note-on when pressed and note-off when released.
+All app ↔ pad traffic is **raw HID** on the Vial interface (USB interface 1, 32-byte reports,
+EP 0x82 in / 0x03 out). No MIDI. Verified on hardware 2026-10-07.
 
-## Notes
+## Controls
 
-| Control | Note |
+Custom keycodes **WM01–WM32** (`QK_KB_0..31`, shown on Vial's "User" tab). They do nothing
+locally; the pad reports them to the app. Firmware defaults:
+
+| Control | Default |
 |---|---|
-| Keys 0–15 (index = row × 4 + col, top-left = 0) | 48–63 |
-| Left small knob push | 64 |
-| Right small knob push | 65 |
-| Big knob push | Next layer: TO(1)/TO(2)/TO(3)/TO(0) on layers 0–3 (no MIDI) |
-| Left small knob CCW / CW | 67 / 68 (each tick sends a quick on/off) |
-| Right small knob CCW / CW | 69 / 70 |
+| Keys (index = row × 4 + col, top-left = 0) | WM01–WM16 |
+| Left / right small knob push | WM17 / WM18 |
+| Left small knob CCW / CW | WM19 / WM20 |
+| Right small knob CCW / CW | WM21 / WM22 |
+| Big knob push | Next layer: TO(1)/TO(2)/TO(3)/TO(0) on layers 0–3 |
 | Big knob turn | Mouse wheel down / up, every layer |
+| Spare | WM23–WM32 |
 
 ```
-┌───┬───┬───┬───┐   ┌───┐ ┌───┐
-│48 │49 │50 │51 │   │64 │ │65 │
-├───┼───┼───┼───┤   └───┘ └───┘
-│52 │53 │54 │55 │
-├───┼───┼───┼───┤
-│56 │57 │58 │59 │      ┌───┐
-├───┼───┼───┼───┤      │TO+│
-│60 │61 │62 │63 │      └───┘
-└───┴───┴───┴───┘
+┌────┬────┬────┬────┐   ┌────┐ ┌────┐
+│WM01│WM02│WM03│WM04│   │WM17│ │WM18│
+├────┼────┼────┼────┤   └────┘ └────┘
+│WM05│WM06│WM07│WM08│
+├────┼────┼────┼────┤
+│WM09│WM10│WM11│WM12│      ┌───┐
+├────┼────┼────┼────┤      │TO+│
+│WM13│WM14│WM15│WM16│      └───┘
+└────┴────┴────┴────┘
 ```
 
-These are only the **defaults**. Every key, knob push and knob direction can be remapped in Vial
-(vial.rocks in Chrome, or the Vial desktop app) — ordinary keys and MIDI notes can be mixed
-freely. The app therefore keys its config **by MIDI note, not by key position**; a key remapped
-to an ordinary keycode is simply invisible to the app.
-
-## LEDs
-
-16 per-key LEDs, VialRGB direct mode. LED index = key index (row × 4 + col).
-
-## Layers
-
-Firmware layer 0 holds everything; layers 1–3 are transparent (big knob stays wheel).
-Big knob push cycles layers (firmware default). The OLED shows the WING logo and the layer
-number (1–4, i.e. firmware layer + 1) dark on a bright box. Read the live keymap with
-`tools/vialhid.py dump`.
+Every control can be remapped in Vial (vial.rocks in Chrome, or the Vial desktop app). Ordinary
+keys (e.g. F-keys for Wing Edit) and WM keys can be mixed freely. Layers 1–3 are transparent by
+default; events carry the current layer, so the app maps **(layer, WM id)** without per-layer
+keycodes. What each control *does* is set entirely in the app (macros), never here.
 
 **Reflashing resets Vial edits** (VIA's EEPROM magic is the build date). Bake anything worth
 keeping into `firmware/vial/` defaults, or save a `.vil` in Vial first.
 
-## Mapping
+## Raw HID protocol (WM_PROTO 1)
 
-These are firmware **defaults** only. What each MIDI control does is set entirely in wingmacro
-(macros), never in this file. See "Mapping model" in `CLAUDE.md`.
+Host → pad (reply echoes the request id, like VIA):
+
+| Request | Meaning | Reply |
+|---|---|---|
+| `F0 01` | hello / keepalive: enable events for 3 s | `F0 01 <proto> <layer> <layer_state lo> <hi>` |
+| `F0 02` | get state (doesn't subscribe) | same as above |
+| `F0 03` | unsubscribe | — |
+
+Pad → host, unsolicited, **only while subscribed** (so it never blocks when nobody listens):
+
+| Event | Bytes |
+|---|---|
+| WM key press/release | `F1 01 <id 1–32> <pressed> <layer> <row> <col> <seq>` |
+| Layer changed | `F1 02 <layer> <seq>` |
+
+- Knob turns report press only; row 253 = CW, 252 = CCW, col = encoder index (0 left, 1 right).
+- `seq` is an 8-bit counter across all events; a gap means a dropped event → re-query with `F0 02`.
+- Replies and events share the IN endpoint: route by first byte (`F1` = event).
+- The app must send `F0 01` at least every 3 s (1 s recommended).
+- Don't run the app and the Vial editor against the pad on the same host at the same time.
+
+Other commands used (standard VIA/Vial): `0x11` layer count, `0x12` keymap buffer,
+`FE 03` encoder map, `07 41` / `07 42` VialRGB mode / direct LED HSV, `08 41` get mode.
+See `tools/vialhid.py`.
+
+## LEDs
+
+16 per-key LEDs. LED index = key index (row × 4 + col). Knobs have no LEDs.
+Firmware default: solid HSV 22/255/47 (matches the case). Brightness capped at 200.
+
+## OLED
+
+WING logo plus the layer number (1–4, i.e. firmware layer + 1) shown dark on a bright box, all
+left-aligned because the case hides the right edge. Blanks after 30 min idle.

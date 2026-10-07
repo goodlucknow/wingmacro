@@ -22,9 +22,9 @@ The same app must run on all three:
 |---|---|---|
 | Surface Pro 4 (Windows 10) | When the WING travels | Also runs Wing Edit + the AHK scroll script |
 | Desktop Mac | At home | Also runs Wing Edit |
-| Linux container on home server | At home, desk always controllable without the Mac on | No Wing Edit here. Check USB MIDI works in the container (host kernel needs the USB audio/MIDI driver); fall back to a small VM with USB passthrough if not |
+| Linux container on home server | At home, desk always controllable without the Mac on | No Wing Edit here. Pad reached via USB passthrough + libusb (verified) |
 
-**Home server host is IncusOS** — immutable, no shell, no sudo, no `/etc/udev`. Never suggest host-shell commands; host changes are only `incus config ...` run from the Mac/UI. The pad reaches the container as USB passthrough (`/dev/bus/usb/...`, d010:1601, group `claude`, rw), which follows replugs. There are no `/dev/hidraw*` nodes: reach Vial raw HID (interface 1, EP 0x82 in / 0x03 out, 32-byte reports) via **libusb** (pyusb or hidapi's libusb backend), detaching the kernel driver on interface 1 only. MIDI works via ALSA (`/dev/snd/midiC*D0`). Bootloader `1eaf:0003` is also passed through for flashing.
+**Home server host is IncusOS** — immutable, no shell, no sudo, no `/etc/udev`. Never suggest host-shell commands; host changes are only `incus config ...` run from the Mac/UI. The pad reaches the container as USB passthrough (`/dev/bus/usb/...`, d010:1601, group `claude`, rw), which follows replugs. There are no `/dev/hidraw*` nodes: reach Vial raw HID (interface 1, EP 0x82 in / 0x03 out, 32-byte reports) via **libusb** (pyusb or hidapi's libusb backend), detaching the kernel driver on interface 1 only. Bootloader `1eaf:0003` is also passed through for flashing.
 
 Only one host owns the pad at a time — whichever it's plugged into.
 
@@ -34,23 +34,23 @@ Only one host owns the pad at a time — whichever it's plugged into.
 KB16 Rev2 (stock Vial firmware)
  ├─ big knob ──── mouse wheel ──→ OS ──→ Wing Edit (touch-and-turn)
  │                                 └─ Windows: AHK scroll acceleration
- ├─ keys + small knobs ── MIDI notes ──→ wingmacro app ── native TCP 2222 ──→ WING
+ ├─ keys + small knobs ── raw HID events ──→ wingmacro app ── native TCP 2222 ──→ WING
  └─ per-key RGB ←── raw HID (VialRGB direct mode) ←── wingmacro app
 ```
 
 - **App**: Python, runs as a background service, cross-platform (Windows 10, macOS, Linux). Configuration through a small local web UI (replaces the old tkinter GUI, which can't run headless). Python deps are fine — the old "single standalone file" constraint was only a chat-upload workaround and no longer applies.
-- **Input**: keys and the two small encoders send MIDI notes (assigned in the Vial editor). Each encoder direction is its own note; the app counts ticks and applies acceleration. Suggested libs: `mido` + `python-rtmidi`.
+- **Input (decided 2026-10-07: raw HID, not MIDI)**: keys and the two small encoders send custom keycodes WM01–WM32 (Vial "User" tab). The firmware reports them, with the current layer, as raw HID events on the Vial interface. LEDs and the layer query use the same channel. The protocol is in `docs/pad-map.md`. Each encoder direction is its own WM id; the app counts ticks and applies acceleration. Use `hidapi` (hidraw/IOKit/Windows), or libusb in the Linux container.
 - **LED feedback**: app drives per-key colours via VialRGB direct mode over raw HID (`hidapi`). The app reflects WING state, e.g. red = muted, amber = soft mute fading, flash on tap tempo beats. No rainbow.
 - **Big knob**: stays a standard mouse wheel on every layer. The app ignores it.
 
 ## Repo layout (proposed)
 
 ```
-app/                 Python package (WING client, fades, tap tempo, FX db, MIDI in, LED out, web UI)
+app/                 Python package (WING client, fades, tap tempo, FX db, pad HID in/LED out, web UI)
 firmware/            Vial keymap for doio/kb16/rev2 (keymap.c, rules.mk, config.h, vial.json) + build/flash notes
 platform/windows/    scroll-accel.ahk + autostart notes
 platform/linux/      systemd unit, udev rules
-docs/                pad-map.md (key/encoder → MIDI note, LED index per key), WING protocol notes
+docs/                pad-map.md (WM keycodes, raw HID protocol, LED index per key), WING protocol notes
 CLAUDE.md
 ```
 
@@ -61,9 +61,9 @@ CLAUDE.md
 - MCU APM32F103 (STM32F103-compatible). 16 keys, 3 encoders (1 large, 2 small), per-key RGB, OLED.
 - Use **vial-qmk** (separate fork from upstream QMK — don't nest it inside qmk_firmware). Keymap folder must be named `vial`.
 - Lighting is **RGB_MATRIX**, not RGBLIGHT (the old rainbow-stuck bug came from using the wrong one). In `vial.json` set `"lighting": "vialrgb"`; in `rules.mk` set `VIALRGB_ENABLE = yes`. Default effect: solid/off, not rainbow.
-- Previous build used 4 layers (`"layers": 4` inside the `"vial"` object of `vial.json`) and `"midi": "advanced"`.
+- 4 layers (Vial default). No MIDI.
 - Big encoder → mouse wheel up/down on **every** layer.
-- Small encoders: each turn direction sends its own MIDI note, and each encoder's push switch sends its own note too, with both press and release. The app handles push-and-turn, so don't use momentary layer keys on the pushes for this.
+- Small encoders: each turn direction sends its own WM keycode, and each encoder's push switch sends its own WM keycode too, with both press and release. The app handles push-and-turn, so don't use momentary layer keys on the pushes for this.
 - Bootloader: reset button on the back of the PCB, or hold key (0,0) while plugging in, or a `QK_BOOT` key.
 - Check whether vial-qmk already ships a `vial` keymap for doio/kb16/rev2; if not, port from upstream QMK's `via` keymap.
 
@@ -105,9 +105,9 @@ CLAUDE.md
 
 ## Mapping model (decided 2026-10-07)
 
-- **The pad has no fixed function layout.** In Vial the user makes some keys ordinary keys or function keys (mapped in Wing Edit for navigation), and makes others MIDI. **Every MIDI control is mapped in wingmacro** to whatever the user wants. Never ask "what should key X do". Build the mapping system instead.
+- **The pad has no fixed function layout.** In Vial the user makes some keys ordinary keys or function keys (mapped in Wing Edit for navigation), and makes others WM keys. **Every WM control is mapped in wingmacro** to whatever the user wants. Never ask "what should key X do". Build the mapping system instead.
 - **Macros, in the style of DiGiCo macros.** A control triggers a user-defined macro: an ordered list of actions, with parameters, plus things like waits. Macros are data in the config, built and edited in the web UI.
-- **Controls are identified by MIDI message** (channel + note), not by key position. Vial layers that send different notes show up as different controls. Layers that pass through to the layer below send the same notes, so the app can't tell them apart. If per-layer mappings are wanted, give those layers their own notes in Vial.
+- **Controls are identified by (layer, WM id)**, not by key position. Every event carries the current layer, so layers that pass through to the layer below still give per-layer mappings.
 - **Control kinds**: a button (press and release, so it can act on press, on release or while held), and an encoder (a CCW/CW note pair, with acceleration). An encoder push can act as a modifier: turning while it is held routes to a secondary macro or function. A push with no turn can also be a button.
 - **LED feedback** is also part of a mapping, e.g. this LED is red while this mute is on. The LED index is the key position (see `docs/pad-map.md`).
   - The app drives LEDs through VialRGB direct mode: the `0x07 0x41` command sets the mode, and `0x07 0x42` sets each LED's HSV. Tested on hardware 2026-10-07. In direct mode the app paints every LED, including the background colour, which is configurable and defaults to the case colour (HSV 22/255/47). The firmware caps brightness at 200.
@@ -126,7 +126,7 @@ CLAUDE.md
 
 1. ~~Pad map~~ and ~~Vial keymap~~: done (2026-10-07). See `docs/pad-map.md` and `firmware/`.
 2. Design the macro/mapping data model (config schema) and the action library.
-3. App skeleton: native TCP client + discovery/manual IP, MIDI in, raw HID LED out, web config UI, config file.
+3. App skeleton: native TCP client + discovery/manual IP, pad HID (events in, LEDs out), web config UI, config file.
 4. Port the WING logic above (fader floor, soft mutes, mute groups, tap tempo).
 5. FX database from the protocol PDF + type-based stepping + logf scaling.
 6. Encoder acceleration in the app (fine at slow speeds, faster sweeps when spun).

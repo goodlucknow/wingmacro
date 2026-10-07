@@ -98,7 +98,7 @@ def listen(secs=30):
             except usb.core.USBTimeoutError:
                 continue
             if m[0] == 0xF1 and m[1] == 0x01:
-                src = f"enc{m[6]} {'CW' if m[5] == 254 else 'CCW'}" if m[5] >= 254 else f"r{m[5]}c{m[6]}"
+                src = f"enc{m[6]} {'CW' if m[5] == 253 else 'CCW'}" if m[5] in (252, 253) else f"r{m[5]}c{m[6]}"
                 print(f"seq {m[7]:3} WM{m[2]:02} {'down' if m[3] else 'up  '} layer {m[4]} ({src})")
             elif m[0] == 0xF1 and m[1] == 0x02:
                 print(f"seq {m[3]:3} layer -> {m[2]}")

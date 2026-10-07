@@ -91,7 +91,8 @@ const uint16_t PROGMEM encoder_map[][NUM_ENCODERS][NUM_DIRECTIONS] = {
  * Pad -> host (unsolicited, only while subscribed):
  *   F1 01 <id> <pressed> <layer> <row> <col> <seq>   WMxx press/release
  *   F1 02 <layer> <seq>                              layer changed
- * Encoder ticks report press only (row 254 = CW, 255 = CCW, col = encoder).
+ * Encoder ticks report press only (row KEYLOC_ENCODER_CW = 253, CCW = 252,
+ * col = encoder index).
  */
 #define WM_PROTO 1
 #define WM_SUBSCRIBE_MS 3000
@@ -144,7 +145,7 @@ void raw_hid_receive_kb(uint8_t *data, uint8_t length) {
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     if (IS_KB_KEYCODE(keycode)) {
-        bool encoder = record->event.key.row >= KEYLOC_ENCODER_CW;
+        bool encoder = record->event.key.row == KEYLOC_ENCODER_CW || record->event.key.row == KEYLOC_ENCODER_CCW;
         if (wm_active() && (record->event.pressed || !encoder)) {
             uint8_t msg[] = {WM_EVT, 0x01, keycode - QK_KB_0 + 1, record->event.pressed,
                              get_highest_layer(layer_state), record->event.key.row,
