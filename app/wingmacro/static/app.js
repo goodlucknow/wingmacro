@@ -10,7 +10,7 @@ const S = {
   macroSel: null, consoles: null, scanning: false,
   km: null, kmSel: null, kmSlot: "push", kmTab: "WINGMACRO", kmMods: 0, kmErr: "",
 };
-// WING strip colours 1..18, sampled from Wing Edit (2026-10-07). 13-18 display like 12.
+// WING strip colours, sampled from Wing Edit (2026-10-07). The console palette has 12; 13-18 look reserved and display like 12.
 const WCOL = [null, "#203a64", "#00527f", "#23007f", "#00686a", "#005f1f", "#414c00", "#736b00", "#5e310d",
   "#720020", "#7f2f2f", "#7f007e", "#4f007f", "#4f007f", "#4f007f", "#4f007f", "#4f007f", "#4f007f", "#4f007f"];
 const PALETTE = { red: [0, 255, 200], orange: [16, 255, 200], amber: [24, 255, 200], yellow: [43, 255, 200],

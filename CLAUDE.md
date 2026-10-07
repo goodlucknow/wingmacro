@@ -106,7 +106,7 @@ CLAUDE.md
   - **Exclude BBD-DL**. It uses `/dly` and doesn't suit tap tempo.
 - **Native protocol facts (verified on WING Rack fw 3.1.1, 2026-10-07)**: navigate by name tokens from root (`/ch/1/fdr` → `da c1"ch" c0"1" c2"fdr"`); a data request answers `d7 <hash> <value> de`, a missing node gives a bare `de`; every client receives change events for everything without subscribing (but not for its own writes); `0xdd` on a node returns typed definitions (name, type, unit, min/max, enum items) of all its children; the console refuses a reconnect for ~1 s. Details in `app/wingmacro/wing.py`.
 - **FX parameters come from the console** (`0xdd` definitions of `/fx/N`), so model/mode-dependent params are always current. No hardcoded FX database (decided 2026-10-07): new models/params from WING firmware updates work without code changes.
-- Strip colours: `/ch/N/col` is 1..18; Wing Edit shows 12 distinct colours and draws 13–18 like 12 (sampled 2026-10-07, table in `static/app.js` WCOL).
+- Strip colours: `/ch/N/col` is 1..18; the console palette has 12 colours (13–18 look reserved for expansion; Wing Edit draws them like 12). Sampled 2026-10-07, table in `static/app.js` WCOL.
 - Input gain: `/ch/N/in/set/$g` is read-only; write `/io/in/<grp>/<n>/g` from `/ch/N/in/conn/{grp,in}`.
 - Paths checked against the protocol doc (v3.1.0): `/{ch,aux,bus,main,mtx,dca}/N/fdr` and `/mute`, sends `/ch/N/send/B/lvl`, mute groups `/mgrp/1..8/mute`, FX `/fx/1..16/...`. The PDF is gitignored (free download from Behringer); see `docs/README.md`.
 
