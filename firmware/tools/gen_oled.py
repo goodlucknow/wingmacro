@@ -16,7 +16,8 @@ W, H = 128, 32
 LOGO = os.path.join(os.path.dirname(__file__), "wing_logo.png")
 THRESHOLD = 140  # grey level below which a logo pixel is lit
 TEXT_BOX = (0, 0, 98, H)  # area the wordmark is centred in
-DOT_D, DOT_GAP = 10, 3    # dot diameter and gap between dots
+DOT_D, DOT_GAP = 10, 3    # dot size and gap between dots
+DOT_R = 2                 # corner radius of the layer squares
 OUT = os.path.join(os.path.dirname(__file__), "..", "vial", "oled_frames.h")
 
 
@@ -42,7 +43,7 @@ def frame(layer):
         cx = gx + (i % 2) * (DOT_D + DOT_GAP)
         cy = gy + (i // 2) * (DOT_D + DOT_GAP)
         box = (cx, cy, cx + DOT_D - 1, cy + DOT_D - 1)
-        d.ellipse(box, fill=1 if i == layer else 0, outline=1)
+        d.rounded_rectangle(box, radius=DOT_R, fill=1 if i == layer else 0, outline=1)
     return img
 
 
