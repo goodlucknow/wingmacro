@@ -36,18 +36,18 @@ A key has **one** trigger: `press` or `hold` (both **fire on release**), or `mom
 | `"press"` | Fires on release. |
 | `"hold"`, `hold_ms` (default 800) | Must be held for `hold_ms`; releasing earlier does nothing. Once the hold time is reached, the release **arms** the key. Then any press of the same key within `cancel_ms` (global `pad.cancel_ms`, default 400, settable in the web UI; can be overridden per key) **cancels** it, so a tap or double tap works. If nothing is pressed in that time, it fires. The firing is delayed by `cancel_ms`, which is accepted. |
 
-| `"momentary"` | Runs on key down and stays active while held (talkback). On release the macro is stopped, every parameter it wrote is restored to its value from before the press, and soft mutes fade back the other way. A `toggle` uses its A side. |
+| `"momentary"` | Runs on key down and stays active while held (talkback). On release the macro is stopped, every parameter it wrote is restored to its value from before the press, and fades go back to where they started. A `toggle` uses its A side. |
 
 **Behaviour** (decided 2026-10-07; replaces the old Actions / Macro / Toggle A/B modes):
 - **Single**: `do` is the list of actions run on each fire.
 - **Toggle** (`"toggle": true`): the key keeps its own on/off state, deliberately **not** read from the console,
   so "this key is on" is always definite. The first press runs `do` (On), the next runs Off, and so on.
   - With `"off_auto": true` (the default), Off is generated as the On list reversed: mutes and mute groups flipped,
-    soft mutes faded back, `led` colours returned to the key colour. Actions without an inverse (wait, tap, set,
+    fades sent `back`, `led` colours returned to the key colour. Actions without an inverse (wait, tap, set,
     FX, levels, macros) are skipped.
   - With `"off_auto": false`, Off is `"off": [...]`, written by hand.
 - Momentary keys are always Single: their release restores everything.
-- Actions **set** a state (`op: on|off`, soft mute `down|up`); they never flip it. `op: toggle` is still accepted for
+- Actions **set** a state (`op: on|off`, fade to a level); they never flip it. `op: toggle` is still accepted for
   old configs.
 - Shared **macros** (Macros page) are reusable action lists. A list runs one with `{"do": "macro", "name": "..."}`
   (inline, nesting allowed up to 8 deep).
@@ -87,7 +87,7 @@ Every fader-type target follows the same floor rules.
 | Action | Params | Kind | Notes |
 |---|---|---|---|
 | `mute` | `target`, `op: on\|off` | button | |
-| `softmute` | `target`, `op: toggle\|down\|up`, `time` (s) | button | An app feature; the WING has no soft mute. **Down**: perceptual fade to −90 dB, then mute. **Up**: unmute, start at −89.5 dB, perceptual fade to **0 dB**. No stored return level. Never finishes early. A new fade on the same target takes over from the current level. |
+| `fade` | `target`, `db` (number, `"-inf"` or `"back"`), `time` (s), `wait` (default true) | button | Timed fader/send move, an app feature (the WING has none). Perceptual curve; up from −∞ starts at −89.5 dB at once; to −∞ fades to −90 dB then snaps; never finishes early. `back` returns to the level before the last fade on that target. With `wait`, the next action waits for the fade. Muting is a separate `mute` action. (Replaces the old `softmute`; configs are converted.) |
 | `mgrp` | `n` 1–8, `op: on\|off` | button | |
 | `macro` | `name` | button | Runs a shared macro's actions inline. |
 | `level` | `target`, `step` (dB, default 0.1) | rotary | Stepping up from −∞ jumps to −89.53 dB. Stepping down past −90 dB snaps to −∞. Reads the value back. |
@@ -111,43 +111,42 @@ At slow speeds each tick is exactly one step. Faster turning multiplies the *num
 
 ```json
 {
-  "version": 1,
+  "version": 3,
   "console": { "ip": "192.168.1.62", "discover": true },
-  "pad": { "background": [22, 255, 47], "cancel_ms": 400 },
+  "pad": { "background": [22, 255, 47], "cancel_ms": 400, "hold_ms": 800 },
   "macros": {
-    "band_out": {
-      "retrigger": "ignore",
-      "steps": [
-        { "do": "softmute", "target": "dca/1", "op": "down", "time": 10 },
-        { "do": "wait", "ms": 2000 },
-        { "do": "mgrp", "n": 2, "op": "on" },
-        { "do": "led", "colour": "red" }
-      ]
-    },
-    "band_in": { "steps": [
-        { "do": "mgrp", "n": 2, "op": "off" },
-        { "do": "softmute", "target": "dca/1", "op": "up", "time": 10 },
-        { "do": "led", "colour": "green" }
+    "Band out": { "steps": [
+      { "do": "fade", "target": "dca/1", "db": "-inf", "time": 10 },
+      { "do": "mute", "target": "dca/1", "op": "on" },
+      { "do": "mgrp", "n": 2, "op": "on" }
     ] }
   },
   "layers": {
     "0": {
       "buttons": {
-        "1":  { "trigger": "press", "do": [{ "do": "mute", "target": "ch/1", "op": "toggle" }] },
-        "2":  { "trigger": "press", "do": [{ "do": "softmute", "target": "main/1", "op": "toggle", "time": 5 }] },
-        "4":  { "trigger": "hold", "hold_ms": 800, "do": { "toggle": ["band_out", "band_in"] }, "background": "green" },
+        "1":  { "trigger": "press", "toggle": true, "do": [{ "do": "mute", "target": "ch/1", "op": "on" }] },
+        "2":  { "trigger": "press", "toggle": true, "do": [
+                  { "do": "fade", "target": "main/1", "db": "-inf", "time": 5 },
+                  { "do": "mute", "target": "main/1", "op": "on" },
+                  { "do": "led", "colour": "red" } ] },
+        "4":  { "trigger": "hold", "hold_ms": 800, "toggle": true, "off_auto": false, "background": [0, 255, 40],
+                "fire_anim": "burst", "hold_colour": "red",
+                "do":  [{ "do": "macro", "name": "Band out" }, { "do": "led", "colour": "red" }],
+                "off": [{ "do": "mgrp", "n": 2, "op": "off" }, { "do": "mute", "target": "dca/1", "op": "off" },
+                        { "do": "fade", "target": "dca/1", "db": 0, "time": 10 }, { "do": "led", "colour": "base" }] },
+        "6":  { "trigger": "momentary", "name": "Talkback", "do": [{ "do": "mute", "target": "ch/40", "op": "off" }] },
         "13": { "trigger": "press", "do": [{ "do": "tap", "slots": [3, 4] }] },
         "16": { "trigger": "press", "do": [{ "do": "refresh" }] }
       },
       "encoders": {
         "left":  { "turn": [{ "do": "level", "target": "main/1" }],
                    "push_turn": [{ "do": "level", "target": "ch/1/send/3" }],
-                   "push": { "trigger": "press", "do": [{ "do": "level_set", "target": "main/1", "db": 0 }] } },
+                   "push": { "do": [{ "do": "level_set", "target": "main/1", "db": 0 }] } },
         "right": { "turn": [{ "do": "fx", "slot": 3, "param": "time" }], "accel": "normal" }
       }
     },
     "1": {
-      "buttons": { "1": { "trigger": "press", "do": [{ "do": "mute", "target": "ch/9", "op": "toggle" }] } }
+      "buttons": { "1": { "trigger": "press", "toggle": true, "do": [{ "do": "mute", "target": "ch/9", "op": "on" }] } }
     }
   }
 }

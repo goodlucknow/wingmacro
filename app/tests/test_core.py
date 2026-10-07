@@ -155,15 +155,18 @@ def test_led_actions_digico_style():
 def test_inverse_steps_and_migration():
     from wingmacro.actions import inverse_steps
     from wingmacro.config import migrate
-    on = [{"do": "mgrp", "n": 1, "op": "on"}, {"do": "softmute", "target": "ch/1", "op": "down"},
+    on = [{"do": "mgrp", "n": 1, "op": "on"}, {"do": "fade", "target": "ch/1", "db": "-inf", "time": 5},
           {"do": "wait", "ms": 100}, {"do": "led", "colour": "red"}]
-    assert inverse_steps(on) == [{"do": "led", "colour": "base"}, {"do": "softmute", "target": "ch/1", "op": "up"},
+    assert inverse_steps(on) == [{"do": "led", "colour": "base"}, {"do": "fade", "target": "ch/1", "db": "back", "time": 5},
                                  {"do": "mgrp", "n": 1, "op": "off"}]
     cfg = {"layers": {"0": {"buttons": {
         "1": {"do": [{"do": "mute", "target": "ch/1", "op": "toggle"}]},
         "2": {"do": {"toggle": ["a", [{"do": "refresh"}]]}, "led": {"bind": "connected"}},
-        "3": {"do": "a"}}, "encoders": {}}}, "macros": {"a": {"retrigger": "ignore", "steps": []}}}
-    assert migrate(cfg) and cfg["version"] == 2
+        "3": {"do": "a"}}, "encoders": {}}},
+        "macros": {"a": {"retrigger": "ignore", "steps": [{"do": "softmute", "target": "aux/1", "op": "down", "time": 4}]}}}
+    assert migrate(cfg) and cfg["version"] == 3
+    assert cfg["macros"]["a"]["steps"] == [{"do": "fade", "target": "aux/1", "time": 4, "db": "-inf"},
+                                           {"do": "mute", "target": "aux/1", "op": "on"}]
     b = cfg["layers"]["0"]["buttons"]
     assert b["1"] == {"do": [{"do": "mute", "target": "ch/1", "op": "on"}], "toggle": True, "off_auto": True}
     assert b["2"] == {"do": [{"do": "macro", "name": "a"}], "off": [{"do": "refresh"}], "toggle": True, "off_auto": False}

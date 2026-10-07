@@ -78,11 +78,11 @@ CLAUDE.md
   - Stepping *up* from −∞ must jump straight to ~−89.5 dB, or the fader never leaves the bottom.
   - Stepping *down* past −90 dB snaps to −∞.
   - Same logic applies to sends.
-- **Soft mute fades**:
-  - Fade to −90 dB, not −144, then mute.
+- **Fades** (was "soft mute" in the old app; now a `fade` action, followed by a separate `mute` action when wanted, decided 2026-10-07):
+  - Fade to −90 dB, not −144, then snap to −∞ (muting is a separate action).
   - Never complete a fade early. A previous "early completion" shortcut made 10 s fades finish in about 6 s.
-  - Soft mute is an app feature (WING has none). Fade-in returns to 0 dB, not a stored level (decided 2026-10-07).
-  - Fade-in: unmute and start from about −89.5 dB immediately. Don't let a slow easing curve sit inaudible for seconds.
+  - Fades are an app feature (WING has none). Target is a dB value, −∞, or "back" (the level before the last fade on that target).
+  - Fading up from −∞: start from about −89.5 dB immediately. Don't let a slow easing curve sit inaudible for seconds.
   - Use a **perceptual curve** that spends most of the time above about −20 dB, where changes are audible. Low levels sound almost the same.
   - Must work for every fader type: ch, aux, bus, main, matrix, DCA. Use generalized path addressing.
 - **Mute groups**: 8 (1–8).
@@ -125,7 +125,7 @@ CLAUDE.md
 
 ### Action / function library (from the previous app — rebuild these as macro actions)
 
-- Buttons: hard mute, soft mute (with fade time), mute group (1–8), tap tempo, connect/refresh.
+- Buttons: mute, fade (with time), mute group (1–8), tap tempo, connect/refresh.
 - Rotaries: fader level for any fader type, send level (channel → bus), FX parameter (slot + parameter, picked from a list of the FX currently loaded).
 - The config UI shows only the fields that apply to the chosen action.
 - Connect/refresh polls state and scans the FX slots.

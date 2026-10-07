@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 DEFAULT = {
-    "version": 2,
+    "version": 3,
     "console": {"ip": "", "discover": True},
     "pad": {"background": [22, 255, 47], "cancel_ms": 400, "hold_ms": 800},
     "macros": {},
@@ -73,7 +73,37 @@ def _migrate_mapping(b):
         b.update(do=[dict(steps[0], op="down" if steps[0]["do"] == "softmute" else "on")], toggle=True, off_auto=True)
 
 
+def _split_softmute(steps):
+    """v2 -> v3: the old soft mute = a timed fader fade plus a mute; now two console actions."""
+    out = []
+    for st in steps or []:
+        if st.get("do") != "softmute":
+            out.append(st)
+            continue
+        fade = {"do": "fade", "target": st.get("target"), "time": st.get("time", 5)}
+        if st.get("op") == "up":
+            out += [{"do": "mute", "target": st.get("target"), "op": "off"}, dict(fade, db=0)]
+        else:
+            out += [dict(fade, db="-inf"), {"do": "mute", "target": st.get("target"), "op": "on"}]
+    return out
+
+
 def migrate(cfg):
+    changed = _migrate_v1(cfg)
+    if cfg.get("version", 1) < 3:
+        lists = []
+        for layer in cfg.get("layers", {}).values():
+            maps = list(layer.get("buttons", {}).values()) + [e["push"] for e in layer.get("encoders", {}).values() if "push" in e]
+            lists += [(m, k) for m in maps for k in ("do", "off") if k in m]
+        lists += [(m, "steps") for m in cfg.get("macros", {}).values()]
+        for owner, key in lists:
+            owner[key] = _split_softmute(owner[key])
+        cfg["version"] = 3
+        changed = True
+    return changed
+
+
+def _migrate_v1(cfg):
     if cfg.get("version", 1) >= 2:
         return False
     for layer in cfg.get("layers", {}).values():

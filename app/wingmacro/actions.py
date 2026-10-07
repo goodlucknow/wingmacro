@@ -58,8 +58,8 @@ class Context:
     def __init__(self, wing, cfg_ref):
         self.wing = wing
         self.cfg = cfg_ref  # callable returning current config
-        self.fades = {}  # target -> (direction, task)
-        self.softmute = {}  # target -> "down" | "up" | "fading_down" | "fading_up"
+        self.fades = {}  # target -> running fade task
+        self.fade_back = {}  # target -> level before its last fade (for "back")
         self.fx_models = {}  # slot -> model name
         self.fx_defs = {}  # slot -> {param: NodeDef}
         self.taps = {}  # slots key -> {"t": [press times], "ms": period or None}
@@ -109,59 +109,55 @@ async def a_level_set(ctx, p, ticks=None):
     await ctx.wing.set(level_path(p["target"]), db)
 
 
-async def a_softmute(ctx, p, ticks=None):
+async def a_fade(ctx, p, ticks=None):
+    """Move a fader or send to `db` (number, "-inf", or "back" = the level before the last fade on
+    this target) over `time` seconds. Perceptual curve; up from -inf starts at -89.5 dB at once;
+    never finishes early. With `wait` (default) the next action waits until the fade is done."""
     target = p["target"]
-    op = p.get("op", "toggle")
-    if op == "toggle":
-        st = ctx.softmute.get(target)
-        if st is None:
-            mpath, inv = mute_path(target)
-            muted = bool(await ctx.wing.value(mpath)) != inv
-            lvl = await ctx.wing.value(level_path(target))
-            st = "down" if muted or (lvl is not None and lvl < FLOOR - 0.01) else "up"
-        op = "up" if st in ("down", "fading_down") else "down"
+    path = level_path(target)
+    cur = await ctx.wing.value(path)
+    if cur is None:
+        return
+    to = p.get("db", 0)
+    if to == "back":
+        to = ctx.fade_back.get(target, 0.0)
+    else:
+        ctx.fade_back[target] = cur
+        to = NEG_INF if to == "-inf" else float(to)
     old = ctx.fades.pop(target, None)
-    if old:
-        old[1].cancel()
-    task = asyncio.create_task(_fade(ctx, target, op, float(p.get("time", 5))))
-    ctx.fades[target] = (op, task)
+    if old and not old.done():
+        old.cancel()  # a new fade on the same target takes over from the current level
+    task = asyncio.create_task(_fade_to(ctx, target, path, to, float(p.get("time", 5))))
+    ctx.fades[target] = task
+    if p.get("wait", True):
+        await asyncio.wait({task})  # returns (doesn't raise) if a later fade takes over
 
 
-async def _fade(ctx, target, op, secs):
-    lpath = level_path(target)
-    mpath, inv = mute_path(target)
+async def _fade_to(ctx, target, path, end, secs):
     w = ctx.wing
     try:
-        cur = await w.value(lpath)
-        if cur is None:
+        start = await w.value(path)
+        if start is None:
             return
-        if op == "down":
-            ctx.softmute[target] = "fading_down"
-            start, end = max(cur, FADE_END), FADE_END
-            if cur < FLOOR - 0.01:
-                secs = 0
-        else:
-            ctx.softmute[target] = "fading_up"
-            start, end = (cur if cur >= FLOOR else FLOOR), 0.0
-            await w.set(lpath, start)
-            await w.set(mpath, int(inv))  # unmute
+        to_inf = end < FLOOR - 0.01
+        if to_inf:
+            end = FADE_END  # fade to -90 (audibly silent), then snap to -inf
+        if start < FLOOR - 0.01:
+            if to_inf:
+                return
+            start = FLOOR  # leave -inf straight away, don't sit inaudible
+            await w.set(path, start)
         t0 = time.monotonic()
         while True:
             t = (time.monotonic() - t0) / secs if secs > 0 else 1.0
             if t >= 1.0:  # never finish early: only after the full time has elapsed
                 break
             db = perceptual(start, end, t)
-            await w.set(lpath, NEG_INF if db < FLOOR else round(db, 2))
+            await w.set(path, NEG_INF if db < FLOOR else round(db, 2))
             await asyncio.sleep(0.02)
-        if op == "down":
-            await w.set(lpath, NEG_INF)
-            await w.set(mpath, int(not inv))  # mute
-            ctx.softmute[target] = "down"
-        else:
-            await w.set(lpath, end)
-            ctx.softmute[target] = "up"
+        await w.set(path, NEG_INF if to_inf else end)
     finally:
-        if ctx.fades.get(target, (None, None))[1] is asyncio.current_task():
+        if ctx.fades.get(target) is asyncio.current_task():
             del ctx.fades[target]
 
 
@@ -323,25 +319,27 @@ async def a_macro(ctx, p, ticks=None):
     """Placeholder: `macro` steps are expanded inline by the engine (Engine._steps)."""
 
 
-INVERSE_OPS = {"mute": {"on": "off", "off": "on"}, "mgrp": {"on": "off", "off": "on"},
-               "softmute": {"down": "up", "up": "down"}}
+INVERSE_OPS = {"mute": {"on": "off", "off": "on"}, "mgrp": {"on": "off", "off": "on"}}
 
 
 def inverse_steps(steps):
-    """Automatic Off list for a toggle key: the On list reversed, with mutes/mute groups/soft mutes
-    flipped and key colours set back to the key's own colour. Other actions have no inverse."""
+    """Automatic Off list for a toggle key: the On list reversed, with mutes/mute groups flipped,
+    fades sent back to where they started and key colours set back to the key's own colour.
+    Other actions have no inverse."""
     out = []
     for s in reversed(steps):
         d = s.get("do")
         if d in INVERSE_OPS and s.get("op") in INVERSE_OPS[d]:
             out.append(dict(s, op=INVERSE_OPS[d][s["op"]]))
+        elif d == "fade" and s.get("db") != "back":
+            out.append(dict(s, db="back"))
         elif d == "led":
             out.append({k: v for k, v in s.items() if k in ("do", "layer", "key")} | {"colour": "base"})
     return out
 
 
 ACTIONS = {
-    "mute": a_mute, "softmute": a_softmute, "mgrp": a_mgrp, "level_set": a_level_set,
+    "mute": a_mute, "fade": a_fade, "mgrp": a_mgrp, "level_set": a_level_set,
     "level": a_level, "gain": a_gain, "fx": a_fx, "fx_cycle": a_fx_cycle, "fx_set": a_fx_set,
     "tap": a_tap, "refresh": a_refresh, "wait": a_wait, "set": a_set, "led": a_led, "macro": a_macro,
 }

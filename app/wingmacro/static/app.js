@@ -38,8 +38,8 @@ const KINDS = [["ch", "CH", 40], ["aux", "AUX", 8], ["bus", "BUS", 16], ["main",
 
 const ACT = {
   mute:      { label: "Mute", g: "Mutes", f: [["target", "target"], ["op", "op"]] },
-  softmute:  { label: "Soft mute", g: "Mutes", f: [["target", "target"], ["op", "opsoft"], ["time", "num", { unit: "s", def: 5, step: 0.5, min: 0 }]] },
   mgrp:      { label: "Mute group", g: "Mutes", f: [["n", "mgrp"], ["op", "op"]] },
+  fade:      { label: "Fade", g: "Levels", f: [["target", "target"], ["db", "fadeto"], ["time", "num", { unit: "s", def: 5, step: 0.5, min: 0 }], ["wait", "wait"]] },
   level_set: { label: "Set level", g: "Levels", f: [["target", "target"], ["db", "db"]] },
   level:     { label: "Level", g: "Levels", rot: true, f: [["target", "target"], ["step", "num", { unit: "dB", ph: "0.1", step: 0.1, min: 0 }]] },
   gain:      { label: "Input gain", g: "Levels", rot: true, f: [["target", "targetch"], ["step", "num", { unit: "dB", ph: "0.5", step: 0.5, min: 0 }]] },
@@ -196,7 +196,7 @@ function summary(m) {                       // -> {cap, col, name, act}
     const t = targetLabel(st.target);           // safe when no target has been picked yet
     switch (st.do) {
       case "mute": r = { cap: t.cap, col: t.col, name: t.name, act: "Mute" }; break;
-      case "softmute": r = { cap: t.cap, col: t.col, name: t.name, act: `Soft mute ${st.time ?? 5}s` }; break;
+      case "fade": r = { cap: t.cap, col: t.col, name: t.name, act: `Fade ${st.time ?? 5}s` }; break;
       case "mgrp": r = { cap: `MGRP.${st.n}`, name: stripInfo("mgrp", st.n).name || `Mute grp ${st.n}`, act: "Mute group" }; break;
       case "level_set": r = { cap: t.cap, col: t.col, name: t.name, act: `Set ${st.db === "-inf" ? "−∞" : (st.db ?? 0) + " dB"}` }; break;
       case "tap": r = { cap: "FX." + (st.slots || []).join(","), name: "Tap", act: "Tap tempo" }; break;
@@ -358,7 +358,7 @@ function keyEditor(idx) {
           field("Cancel window", h("span", {}, numInput(m.cancel_ms, (v) => { m.cancel_ms = v; }, { ph: pad.cancel_ms ?? 400, step: 50, min: 0 }), h("span", { class: "unit" }, "ms"))))),
       h("p", { class: "hint", style: "min-height:2.6em" }, {
         hold: "Hold until the key lights fully, then release. It flashes while armed; tap it again within the cancel window to cancel.",
-        momentary: "Acts the moment the key goes down and stays active while held (e.g. talkback). On release, everything it changed is put back and soft mutes fade back.",
+        momentary: "Acts the moment the key goes down and stays active while held (e.g. talkback). On release, everything it changed is put back and fades go back to where they started.",
       }[m.trigger] || "Fires when the key is released.")),
     sect("Actions", actionsEditor(m, m.trigger === "momentary")),
     sect("LED", h("p", { class: "hint" }, "Key colour is the key's resting colour. Macros change it with the Key LED action, e.g. a dim red here and full red in the macro."),
@@ -398,11 +398,12 @@ function knobEditor(knob) {
 // ---------------------------------------------------------------------------- actions (single / toggle)
 // Toggle belongs to the key: it remembers on/off itself and runs its On list, then its Off list.
 // Actions always set a state (on/off, fade out/in); they never flip it.
-const INVERSE = { mute: { on: "off", off: "on" }, mgrp: { on: "off", off: "on" }, softmute: { down: "up", up: "down" } };
+const INVERSE = { mute: { on: "off", off: "on" }, mgrp: { on: "off", off: "on" } };
 function inverseSteps(steps) {              // keep in sync with actions.inverse_steps
   const out = [];
   for (const st of [...(steps || [])].reverse()) {
     if (INVERSE[st.do]?.[st.op]) out.push({ ...st, op: INVERSE[st.do][st.op] });
+    else if (st.do === "fade" && st.db !== "back") out.push({ ...st, db: "back" });
     else if (st.do === "led") out.push({ do: "led", colour: "base", ...(st.key ? { layer: st.layer, key: st.key } : {}) });
   }
   return out;
@@ -412,6 +413,7 @@ function stepText(st) {
   const op = { on: "on", off: "off", down: "fade out", up: "fade in" }[st.op] || "";
   if (st.do === "led") return st.colour === "base" ? "Key LED: back to key colour" : `Key LED: ${typeof st.colour === "string" ? st.colour : "custom"}`;
   if (st.do === "mgrp") return `Mute group ${st.n} ${op}`;
+  if (st.do === "fade") return `Fade ${targetLabel(st.target).name} ${st.db === "back" ? "back" : st.db === "-inf" ? "to −∞" : `to ${st.db ?? 0} dB`} over ${st.time ?? 5}s`;
   return `${a} ${op}${st.target ? " · " + targetLabel(st.target).name : ""}`.trim();
 }
 function actionsEditor(m, momentary) {
@@ -426,7 +428,7 @@ function actionsEditor(m, momentary) {
   if (!toggle) { out.push(stepList(m.do, false)); return h("div", {}, out); }
   const auto = m.off_auto !== false;
   const inv = inverseSteps(m.do);
-  const skipped = m.do.filter((st) => !INVERSE[st.do]?.[st.op] && st.do !== "led").map((st) => ACT[st.do]?.label || st.do);
+  const skipped = m.do.filter((st) => !INVERSE[st.do]?.[st.op] && st.do !== "led" && !(st.do === "fade" && st.db !== "back")).map((st) => ACT[st.do]?.label || st.do);
   out.push(h("div", { class: "tgl" }, h("div", { class: "tglhead" }, h("b", {}, "ON"), h("span", { class: "muted" }, "first press")), stepList(m.do, false)),
     h("div", { class: "tgl off" },
       h("div", { class: "tglhead" }, h("b", {}, "OFF"), h("span", { class: "muted" }, "next press"),
@@ -436,7 +438,7 @@ function actionsEditor(m, momentary) {
         }, "sm")),
       auto ? h("div", {},
         inv.length ? h("ol", { class: "autolist" }, inv.map((st) => h("li", {}, stepText(st)))) : h("p", { class: "hint" }, "Nothing to undo yet."),
-        h("p", { class: "hint" }, "The On actions reversed: mutes and mute groups flipped, soft mutes faded back, key colours restored."
+        h("p", { class: "hint" }, "The On actions reversed: mutes and mute groups flipped, fades sent back to where they started, key colours restored."
           + (skipped.length ? ` Not reversed: ${[...new Set(skipped)].join(", ")}. Choose Custom to set the Off actions yourself.` : "")))
         : stepList(m.off ||= [], false)),
     h("p", { class: "hint" }, "The key remembers whether it's on; each press runs the other list."));
@@ -464,7 +466,7 @@ function stepList(steps, rotary) {
     for (const [k, t, o] of ACT[d].f) {
       if (o?.def != null) st[k] = o.def;
       if (t === "op") st[k] = "on";
-      if (t === "opsoft") st[k] = "down";
+      if (t === "fadeto") st[k] = "-inf";
       if (t === "macro") st[k] = macroNames()[0] || newMacro();
       if (t === "fxslot") st[k] = firstFxSlot();
       if (t === "fxslots") st[k] = [];
@@ -506,8 +508,14 @@ function fieldFor(st, k, t, o) {
   switch (t) {
     case "target": case "targetch":
       return field(t === "targetch" ? "Channel" : "Target", targetBtn(st[k], (v) => { st[k] = v; commit(); }, t === "targetch"));
+    case "fadeto": {
+      const mode = st[k] === "back" ? "back" : st[k] === "-inf" ? "inf" : "db";
+      return field("To", h("span", { class: "row", style: "gap:6px;align-items:center" },
+        seg([["db", "dB"], ["inf", "−∞"], ["back", "Back"]], mode, (v) => { st[k] = v === "back" ? "back" : v === "inf" ? "-inf" : 0; commit(); }, "sm"),
+        mode === "db" && numInput(st[k] ?? 0, (v) => { st[k] = v ?? 0; }, { step: 0.5, min: -89.5, max: 10 }), mode === "db" && h("span", { class: "unit" }, "dB")));
+    }
+    case "wait": return field("Next action", seg([[true, "Waits for fade"], [false, "Runs at once"]], st[k] !== false, (v) => { st[k] = v; commit(); }, "sm"));
     case "op": return field("Set", seg([["on", "On"], ["off", "Off"], ...(st[k] === "toggle" || !st[k] ? [["toggle", "Flip (old)"]] : [])], st[k] || "toggle", (v) => { st[k] = v; commit(); }, "sm"));
-    case "opsoft": return field("Set", seg([["down", "Fade out"], ["up", "Fade in"], ...(st[k] === "toggle" || !st[k] ? [["toggle", "Flip (old)"]] : [])], st[k] || "toggle", (v) => { st[k] = v; commit(); }, "sm"));
     case "macro": return field("Macro", macroPick(st[k], (v) => { st[k] = v; }));
     case "dir": return field("Direction", seg([["next", "Next"], ["prev", "Prev"]], st[k] || "next", (v) => { st[k] = v; commit(); }, "sm"));
     case "num": return field(k === "step" ? "Step" : k === "time" ? "Fade time" : k, h("span", {}, numInput(st[k], (v) => { st[k] = v; }, o), o.unit && h("span", { class: "unit" }, o.unit)));

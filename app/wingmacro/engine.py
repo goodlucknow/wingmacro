@@ -192,7 +192,7 @@ class Engine:
             self._run(steps, ("momentary", st["layer"], st["wm"]), st["t0"], self._src(st), ctx))
 
     async def _momentary_end(self, st):
-        """On release: stop the macro, fade soft mutes back, restore everything else."""
+        """On release: stop the macro, restore what it changed, fade faders back."""
         task = st["task"]
         if not task.done():
             task.cancel()
@@ -209,10 +209,9 @@ class Engine:
         for path, value in st["record"].items():
             if value is not None:
                 await w.set(path, value)
-        for s in st["steps"]:
-            if s.get("do") == "softmute":
-                back = {"down": "up", "up": "down"}.get(s.get("op", "toggle"), "toggle")
-                await ACTIONS["softmute"](self.ctx, dict(s, op=back))
+        for s in reversed(st["steps"]):
+            if s.get("do") == "fade" and s.get("db") != "back":
+                await ACTIONS["fade"](self.ctx, dict(s, db="back", wait=False))
 
     def _led(self, st, kind, dur=None):
         if self.leds and st.get("idx") is not None:
@@ -255,8 +254,8 @@ class Engine:
                 log.warning("unknown action %r", st.get("do"))
                 continue
             try:
-                # soft mutes always use the real client: a momentary release fades them back
-                c = self.ctx if ctx is None or st["do"] == "softmute" else ctx
+                # fades always use the real client: a momentary release fades them back itself
+                c = self.ctx if ctx is None or st["do"] == "fade" else ctx
                 if st["do"] in ROTARY:
                     await fn(c, st, int(st.get("ticks", 1)))
                 else:
