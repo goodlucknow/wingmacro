@@ -7,9 +7,6 @@
 #define VIAL_UNLOCK_COMBO_ROWS { 3, 0 }
 #define VIAL_UNLOCK_COMBO_COLS { 0, 3 }
 
-// Full MIDI keycode set so notes stay remappable in the Vial editor.
-#define MIDI_ADVANCED
-
 // Boot with a solid colour matching the case instead of the stock rainbow.
 // The wingmacro app takes over via VialRGB direct mode.
 #undef RGB_MATRIX_DEFAULT_MODE

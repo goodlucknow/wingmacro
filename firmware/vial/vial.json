@@ -71,7 +71,166 @@
       ]
     ]
   },
-  "vial": {
-    "midi": "advanced"
-  }
+  "customKeycodes": [
+    {
+      "name": "WM01",
+      "title": "wingmacro control 1",
+      "shortName": "WM\n1"
+    },
+    {
+      "name": "WM02",
+      "title": "wingmacro control 2",
+      "shortName": "WM\n2"
+    },
+    {
+      "name": "WM03",
+      "title": "wingmacro control 3",
+      "shortName": "WM\n3"
+    },
+    {
+      "name": "WM04",
+      "title": "wingmacro control 4",
+      "shortName": "WM\n4"
+    },
+    {
+      "name": "WM05",
+      "title": "wingmacro control 5",
+      "shortName": "WM\n5"
+    },
+    {
+      "name": "WM06",
+      "title": "wingmacro control 6",
+      "shortName": "WM\n6"
+    },
+    {
+      "name": "WM07",
+      "title": "wingmacro control 7",
+      "shortName": "WM\n7"
+    },
+    {
+      "name": "WM08",
+      "title": "wingmacro control 8",
+      "shortName": "WM\n8"
+    },
+    {
+      "name": "WM09",
+      "title": "wingmacro control 9",
+      "shortName": "WM\n9"
+    },
+    {
+      "name": "WM10",
+      "title": "wingmacro control 10",
+      "shortName": "WM\n10"
+    },
+    {
+      "name": "WM11",
+      "title": "wingmacro control 11",
+      "shortName": "WM\n11"
+    },
+    {
+      "name": "WM12",
+      "title": "wingmacro control 12",
+      "shortName": "WM\n12"
+    },
+    {
+      "name": "WM13",
+      "title": "wingmacro control 13",
+      "shortName": "WM\n13"
+    },
+    {
+      "name": "WM14",
+      "title": "wingmacro control 14",
+      "shortName": "WM\n14"
+    },
+    {
+      "name": "WM15",
+      "title": "wingmacro control 15",
+      "shortName": "WM\n15"
+    },
+    {
+      "name": "WM16",
+      "title": "wingmacro control 16",
+      "shortName": "WM\n16"
+    },
+    {
+      "name": "WM17",
+      "title": "wingmacro control 17",
+      "shortName": "WM\n17"
+    },
+    {
+      "name": "WM18",
+      "title": "wingmacro control 18",
+      "shortName": "WM\n18"
+    },
+    {
+      "name": "WM19",
+      "title": "wingmacro control 19",
+      "shortName": "WM\n19"
+    },
+    {
+      "name": "WM20",
+      "title": "wingmacro control 20",
+      "shortName": "WM\n20"
+    },
+    {
+      "name": "WM21",
+      "title": "wingmacro control 21",
+      "shortName": "WM\n21"
+    },
+    {
+      "name": "WM22",
+      "title": "wingmacro control 22",
+      "shortName": "WM\n22"
+    },
+    {
+      "name": "WM23",
+      "title": "wingmacro control 23",
+      "shortName": "WM\n23"
+    },
+    {
+      "name": "WM24",
+      "title": "wingmacro control 24",
+      "shortName": "WM\n24"
+    },
+    {
+      "name": "WM25",
+      "title": "wingmacro control 25",
+      "shortName": "WM\n25"
+    },
+    {
+      "name": "WM26",
+      "title": "wingmacro control 26",
+      "shortName": "WM\n26"
+    },
+    {
+      "name": "WM27",
+      "title": "wingmacro control 27",
+      "shortName": "WM\n27"
+    },
+    {
+      "name": "WM28",
+      "title": "wingmacro control 28",
+      "shortName": "WM\n28"
+    },
+    {
+      "name": "WM29",
+      "title": "wingmacro control 29",
+      "shortName": "WM\n29"
+    },
+    {
+      "name": "WM30",
+      "title": "wingmacro control 30",
+      "shortName": "WM\n30"
+    },
+    {
+      "name": "WM31",
+      "title": "wingmacro control 31",
+      "shortName": "WM\n31"
+    },
+    {
+      "name": "WM32",
+      "title": "wingmacro control 32",
+      "shortName": "WM\n32"
+    }
+  ]
 }
