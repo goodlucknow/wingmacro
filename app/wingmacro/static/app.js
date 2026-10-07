@@ -208,37 +208,42 @@ function renderPad() {
 
   const keys = h("div", { class: "keys" }, [...Array(16).keys()].map((idx) => {
     const wm = wmAt(S.layer, idx);
-    if (!wm) return h("div", { class: "key nowm", title: "Not a WM key in Vial (ordinary key)" },
+    if (!wm) return h("div", { class: "key nowm", "data-idx": idx, title: "Not a WM key in Vial (ordinary key)" },
       h("span", { class: "nm" }, "Vial key"), h("span", { class: "act" }, "not WM"));
     const { m, from } = lookup("buttons", wm, S.layer);
     const s = summary(m);
     const led = onLive && live.leds ? live.leds[idx] : null;
     return h("button", {
       class: "key" + (S.sel?.kind === "key" && S.sel.idx === idx ? " sel" : "") + (m && from !== S.layer ? " inherit" : "") + (m ? "" : " empty"),
-      "data-idx": idx, onclick: () => { S.sel = { kind: "key", idx }; render(); },
+      "data-idx": idx, title: `Key ${idx + 1} · WM${String(wm).padStart(2, "0")}`, onclick: () => { S.sel = { kind: "key", idx }; render(); },
+      style: led ? `--led:${hsvCss(led)}` : "",
     },
       h("span", { class: "cap", style: s.col ? `background:${WCOL[s.col]}` : (s.cap ? "" : "visibility:hidden") }, s.cap || "·"),
       h("span", { class: "nm" }, m ? s.name : "—"),
       h("span", { class: "act" }, s.act),
       m && from !== S.layer && h("span", { class: "badge" }, `L${from + 1}`),
-      h("span", { class: "wm" }, `WM${String(wm).padStart(2, "0")}`),
-      h("span", { class: "led", style: led ? `background:${hsvCss(led)};box-shadow:0 0 8px ${hsvCss(led)}` : "" }));
+      h("span", { class: "wm" }, String(wm).padStart(2, "0")));
   }));
 
   const knob = (k) => {
     const { m, from } = lookup("encoders", k, S.layer);
-    return h("button", { class: "knob" + (S.sel?.kind === "knob" && S.sel.knob === k ? " sel" : ""), "data-knob": k,
+    return h("button", { class: "knob" + (S.sel?.kind === "knob" && S.sel.knob === k ? " sel" : "") + (m ? " mapped" : "") + (m && from !== S.layer ? " inherit" : ""),
+      "data-knob": k, title: `${k === "left" ? "Left" : "Right"} knob${m && from !== S.layer ? ` (from layer ${from + 1})` : ""}`,
       onclick: () => { S.sel = { kind: "knob", knob: k }; render(); } },
-      dial(), h("span", { class: "kl" }, h("b", {}, m ? (m.name || rotSummary(m.turn) || "Knob") : (k === "left" ? "Left" : "Right")),
-        m ? (m.push_turn?.length ? "+ push: " + rotSummary(m.push_turn) : "") : "not mapped",
-        m && from !== S.layer ? ` (L${from + 1})` : ""));
+      dial(), h("span", { class: "kl" }, m ? (m.name || rotSummary(m.turn) || "Knob") : "—"));
   };
-  const padBody = h("div", { class: "padbody" }, keys,
-    h("div", { class: "knobs" }, knob("left"), knob("right"),
-      h("div", { class: "bigknob", title: "Big knob: mouse wheel on every layer (not mapped here)" }, "SCROLL")));
+  const oled = h("div", { class: "oled", title: "OLED: shows the layer" }, h("span", { class: "ow" }, "WING"),
+    h("span", { class: "ol" }, (live?.pad.connected ? live.pad.layer : S.layer) + 1));
+  const padBody = h("div", { class: "doio" },
+    h("div", { class: "well" }, keys),
+    h("div", { class: "side" },
+      h("div", { class: "smallknobs" }, knob("left"), knob("right")),
+      oled,
+      h("div", { class: "bigknob", title: "Big knob: mouse wheel on every layer (not mapped here)" }, h("i"), h("span", {}, "SCROLL"))),
+    h("div", { class: "doiomark" }, "DOIO"));
   const legend = h("div", { class: "legend" },
     h("span", {}, h("i"), "Mapped here"), h("span", {}, h("i", { class: "d" }), "Inherited from a lower layer"),
-    h("span", {}, "Bottom bar = live LED (pad on this layer)"),
+    h("span", {}, "Glow = live LED (pad on this layer)"),
     !S.pad?.known && h("span", { style: "color:var(--amber)" }, "Pad keymap unknown: assuming WM01–16"));
 
   return h("div", { class: "cols padpage" },
@@ -761,8 +766,7 @@ function onLive(st) {
     const onL = st.pad.connected && st.pad.layer === S.layer;
     document.querySelectorAll(".key[data-idx]").forEach((k) => {
       const led = onL && st.leds ? st.leds[+k.dataset.idx] : null;
-      const bar = k.querySelector(".led");
-      if (bar) { bar.style.background = led ? hsvCss(led) : ""; bar.style.boxShadow = led ? `0 0 8px ${hsvCss(led)}` : ""; }
+      if (led) k.style.setProperty("--led", hsvCss(led)); else k.style.removeProperty("--led");
     });
   }
   if (S.page === "console" && prevLayer !== undefined && !editing()) renderConsoleLive();
