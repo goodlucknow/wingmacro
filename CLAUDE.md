@@ -110,6 +110,10 @@ CLAUDE.md
 - **Controls are identified by MIDI message** (channel + note), not by key position. Vial layers that send different notes show up as different controls. Layers that pass through to the layer below send the same notes, so the app can't tell them apart. If per-layer mappings are wanted, give those layers their own notes in Vial.
 - **Control kinds**: a button (press and release, so it can act on press, on release or while held), and an encoder (a CCW/CW note pair, with acceleration). An encoder push can act as a modifier: turning while it is held routes to a secondary macro or function. A push with no turn can also be a button.
 - **LED feedback** is also part of a mapping, e.g. this LED is red while this mute is on. The LED index is the key position (see `docs/pad-map.md`).
+  - The app drives LEDs through VialRGB direct mode: the `0x07 0x41` command sets the mode, and `0x07 0x42` sets each LED's HSV. Tested on hardware 2026-10-07. In direct mode the app paints every LED, including the background colour, which is configurable and defaults to the case colour (HSV 22/255/47). The firmware caps brightness at 200.
+  - Each key's LED has a background colour and state colours bound to WING state (e.g. green/red for a toggle), plus transient effects (flashing during a hold, pulsing on tap tempo).
+  - The mode is set without saving to the pad's memory (`noeeprom`). On exit the app switches back to solid colour (VialRGB mode 2), and a power cycle also restores the solid colour.
+- **Trigger modes per mapping**: on press, on release, or **press-and-hold for N ms**, which acts as a safety on risky macros. While the key is held, its LED shows progress, then flashes to confirm. Releasing early cancels. The app times this from note-on and note-off.
 
 ### Action / function library (from the previous app — rebuild these as macro actions)
 
