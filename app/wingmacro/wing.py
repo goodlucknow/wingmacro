@@ -128,6 +128,7 @@ class NodeDef:
     max: float = None
     steps: int = None
     items: list = field(default_factory=list)  # enum: [str]; fenum: [float]
+    idx: int = 0  # position under the parent; numbered children (/ch/1) have no name, only this
 
     @property
     def type_name(self):
@@ -141,8 +142,8 @@ def parse_def(d):
     n = d[j]; longname = d[j + 1:j + 1 + n].decode(errors="replace"); j += 1 + n
     flags = struct.unpack(">H", d[j:j + 2])[0]; j += 2
     t = (flags >> 4) & 15
-    nd = NodeDef(name, longname, h, t, UNITS[flags & 15] if flags & 15 < len(UNITS) else "",
-                 bool(flags & 0x200))
+    nd = NodeDef(name or str(idx), longname, h, t, UNITS[flags & 15] if flags & 15 < len(UNITS) else "",
+                 bool(flags & 0x200), idx=idx)
     rest = d[j:]
     if t in (T_LINF, T_LOGF) and len(rest) >= 12:
         nd.min, nd.max, nd.steps = struct.unpack(">ffi", rest[:12])
