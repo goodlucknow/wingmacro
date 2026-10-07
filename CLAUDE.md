@@ -132,7 +132,9 @@ CLAUDE.md
 
 1. ~~Pad map~~ and ~~Vial keymap~~: done (2026-10-07). See `docs/pad-map.md` and `firmware/`.
 2. ~~Config model~~ (`docs/config-model.md`) and ~~app skeleton~~: done 2026-10-07, tested on the WING + pad (mute, level/floor, accel, push-turn, hold/cancel, soft-mute fades, LEDs).
-3. Real web config UI (forms per action, FX param picker from `/api/fx/N`); currently a JSON editor.
+3. Full mapping UI in the browser, styled after the official WING apps (no Behringer logos/names). Pad view with layer tabs → control editor (trigger, action list, LED rule) with console-fed pickers; macro library; settings. Waiting on Wing Edit screenshots from the user for the look.
+   - Config is per-machine; the UI gets import/export to move configs between hosts (decided 2026-10-07).
+   - Run model (decided 2026-10-07): background service + browser UI, no launchable app. Linux: systemd, UI open on the LAN (no auth for now). Windows/macOS: login autostart + tray/menu-bar icon (Open UI / Quit / status), localhost UI, PyInstaller packaging.
 4. Test on hardware with real presses: LED feel (hold progress, armed flash), acceleration curves, tap tempo on a delay slot, gain.
 7. Rewrite `platform/windows/scroll-accel.ahk`. The original was lost. Consider scoping it to the Wing Edit window (`#HotIf WinActive(...)`) so other mice aren't affected.
 8. Packaging/autostart for each host: Windows startup task, macOS launchd, Linux systemd.
