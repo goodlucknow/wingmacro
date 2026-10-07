@@ -269,3 +269,4 @@ textarea.raw { width: 100%; min-height: 360px; background: #050505; color: var(-
 .target .tn.wm { color: var(--amber); }
 .progress { height: 14px; background: #000; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
 .progress i { display: block; height: 100%; width: 0; background: var(--amber); transition: width .15s; }
+.wheel { display: block; width: 140px; height: 140px; margin-top: 8px; cursor: crosshair; touch-action: none; border-radius: 50%; }

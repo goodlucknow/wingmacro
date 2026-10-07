@@ -77,6 +77,41 @@ function hsvCss(c, boost = true) {
   return `rgb(${[f(5), f(3), f(1)].map((x) => Math.round(x * 255)).join(",")})`;
 }
 const colourOf = (c) => (typeof c === "string" ? PALETTE[c] : c);
+
+// Hue/saturation wheel (angle = hue, radius = saturation) for custom colours. Brightness stays a slider.
+let wheelImg = null;
+function colourWheel(hsv, onInput, onDone) {
+  const R = 70, D = R * 2;
+  const cv = h("canvas", { width: D, height: D, class: "wheel" });
+  const ctx = cv.getContext("2d");
+  if (!wheelImg) {
+    wheelImg = ctx.createImageData(D, D);
+    for (let y = 0; y < D; y++) for (let x = 0; x < D; x++) {
+      const dx = x - R + 0.5, dy = y - R + 0.5, r = Math.hypot(dx, dy), i = (y * D + x) * 4;
+      if (r > R) continue;
+      const hue = ((Math.atan2(dy, dx) / (2 * Math.PI) + 1) % 1) * 255, sat = Math.min(1, r / R) * 255;
+      const [rr, gg, bb] = hsvCss([hue, sat, 200]).match(/\d+/g).map(Number);
+      wheelImg.data.set([rr, gg, bb, r > R - 1 ? Math.round((R - r) * 255) : 255], i);
+    }
+  }
+  const draw = () => {
+    ctx.putImageData(wheelImg, 0, 0);
+    const a = hsv[0] / 255 * 2 * Math.PI, r = hsv[1] / 255 * R;
+    ctx.beginPath(); ctx.arc(R + Math.cos(a) * r, R + Math.sin(a) * r, 6, 0, 2 * Math.PI);
+    ctx.lineWidth = 2.5; ctx.strokeStyle = "#000"; ctx.stroke(); ctx.lineWidth = 1.5; ctx.strokeStyle = "#fff"; ctx.stroke();
+  };
+  const pick = (e) => {
+    const b = cv.getBoundingClientRect(), x = (e.clientX - b.left) * D / b.width - R, y = (e.clientY - b.top) * D / b.height - R;
+    hsv[0] = Math.round(((Math.atan2(y, x) / (2 * Math.PI) + 1) % 1) * 255) % 256;
+    hsv[1] = Math.max(1, Math.min(254, Math.round(Math.hypot(x, y) / R * 255)));   // 1..254 so it stays "custom", not a swatch
+    draw(); onInput();
+  };
+  cv.addEventListener("pointerdown", (e) => { cv.setPointerCapture(e.pointerId); pick(e); });
+  cv.addEventListener("pointermove", (e) => { if (cv.hasPointerCapture(e.pointerId)) pick(e); });
+  cv.addEventListener("pointerup", () => onDone());
+  draw();
+  return cv;
+}
 const sameCol = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 function seg(options, value, onPick, cls = "") {
@@ -593,11 +628,7 @@ function colourPicker(val, set, { allowNone = false, noneLabel = "Background" } 
     const hsv = [...cur];
     const apply = () => { const v = custom ? [...hsv] : store(hsv[0], hsv[1], hsv[2]); set(v); prev.style.background = previewCss(v, hsv); commit(false); };
     const box = h("div", { class: "hsv" });
-    if (custom) ["H", "S"].forEach((lbl, i) => {
-      const out = h("span", {}, hsv[i]);
-      box.append(h("span", {}, lbl), h("input", { type: "range", min: 0, max: 255, value: hsv[i],
-        oninput: (e) => { hsv[i] = +e.target.value; out.textContent = hsv[i]; apply(); }, onchange: () => render() }), out);
-    });
+    if (custom) wrap.append(colourWheel(hsv, () => { apply(); }, () => render()));
     box.append(h("span", {}, "☀"), h("input", { type: "range", min: 4, max: 200, value: hsv[2], title: "Brightness",
       oninput: (e) => { hsv[2] = +e.target.value; pct.textContent = Math.round(hsv[2] / 2) + "%"; apply(); }, onchange: () => render() }), pct);
     wrap.append(h("div", { class: "row", style: "align-items:center;gap:8px;margin-top:6px" }, prev, box));
