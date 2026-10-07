@@ -99,10 +99,10 @@ CLAUDE.md
   - Some parameters depend on the effect's mode and aren't always present (e.g. ST-DL offset). Handle this gracefully.
   - `str` parameters need a way to cycle through their options.
 - **Tap tempo**:
-  - Average the taps, and reset after a gap of 2 s or more.
-  - Musical multipliers: 1/8, 1/4, 1/2, 1×, 2×.
-  - Applies to all FX slots the user has selected.
-  - Delay time is `/fx/X/time`. Detect delays by name: ST-DL, TAP-DL, TAPE-DL, DEL/REV.
+  - Moving average of the tap intervals (window 4), reset after a gap of 2 s or more. Timed from key press.
+  - Per key, per FX slot (a tap macro lists one or more slots). The WING has no global tempo; don't emulate one.
+  - **No multipliers** (decided 2026-10-07): write the beat period; the delay's `fact` subdivision stays on the console and is mappable like any FX param.
+  - Delay time is `/fx/X/time`. Any slot with a `time` param in ms qualifies (no model-name list).
   - **Exclude BBD-DL**. It uses `/dly` and doesn't suit tap tempo.
 - **Native protocol facts (verified on WING Rack fw 3.1.1, 2026-10-07)**: navigate by name tokens from root (`/ch/1/fdr` → `da c1"ch" c0"1" c2"fdr"`); a data request answers `d7 <hash> <value> de`, a missing node gives a bare `de`; every client receives change events for everything without subscribing (but not for its own writes); `0xdd` on a node returns typed definitions (name, type, unit, min/max, enum items) of all its children; the console refuses a reconnect for ~1 s. Details in `app/wingmacro/wing.py`.
 - **FX parameters come from the console** (`0xdd` definitions of `/fx/N`), so model/mode-dependent params are always current. No hardcoded FX database (decided 2026-10-07): new models/params from WING firmware updates work without code changes.
@@ -126,7 +126,7 @@ CLAUDE.md
 - Buttons: hard mute, soft mute (with fade time), mute group (1–8), tap tempo, connect/refresh.
 - Rotaries: fader level for any fader type, send level (channel → bus), FX parameter (slot + parameter, picked from a list of the FX currently loaded).
 - The config UI shows only the fields that apply to the chosen action.
-- Connect/refresh polls state, scans the FX slots, and updates the list of delays for tap tempo.
+- Connect/refresh polls state and scans the FX slots.
 
 ## Open items / next priorities
 

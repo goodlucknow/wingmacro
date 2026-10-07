@@ -8,7 +8,6 @@ DEFAULT = {
     "version": 1,
     "console": {"ip": "", "discover": True},
     "pad": {"background": [22, 255, 47], "cancel_ms": 400, "hold_ms": 800},
-    "tap_tempo": {"slots": {}},
     "macros": {},
     "layers": {"0": {"buttons": {}, "encoders": {}}},
 }
@@ -70,6 +69,8 @@ def validate(cfg):
         for i, st in enumerate(steps):
             if st.get("do") not in ACTIONS:
                 raise ValueError(f"{where} step {i + 1}: unknown action {st.get('do')!r}")
+            if st["do"] == "tap" and not st.get("slots"):
+                raise ValueError(f"{where} step {i + 1}: tap needs 'slots', e.g. [3]")
 
     if not isinstance(cfg, dict) or not isinstance(cfg.get("layers"), dict):
         raise ValueError("config needs a 'layers' object")

@@ -62,7 +62,7 @@ LED feedback for `hold`:
   - mute → red when on / background when off
   - softmute → red when down, pulsing amber while fading
   - mgrp → red when on
-  - tap → pulses on the beat
+  - tap → pulses on that key's own tempo
 - **Transient effects** layer on top in this priority: hold progress / confirm flash > `flash` (press feedback) >
   tap pulse > state colour > background.
 - Colours are HSV triples (0–255, as in VialRGB) or palette names (`red`, `green`, `amber`, `blue`, `white`, `off`).
@@ -88,7 +88,7 @@ Every fader-type target follows the same floor rules.
 | `fx` | `slot`, `param`, `step?` | rotary | The default step depends on the type (int 1, linf 0.01/0.1, fader 0.1 dB). logf steps are proportional to the value, about 1% by default. Skipped silently if the parameter isn't present in the current mode. |
 | `fx_cycle` | `slot`, `param`, `dir: next\|prev` | button | For `str` params. Can also be used as a rotary. |
 | `fx_set` | `slot`, `param`, `value` | button | |
-| `tap` | `slots?` | button | Averages the taps and resets after a gap of 2 s or more. Writes `/fx/X/time` to the targeted slots: `slots` on the action, or else `tap_tempo.slots`, each with its own multiplier (1/8–2×). The WING exposes no global tempo in protocol v3.1 (only the surface's Tap Tempo Flash setting), so it's per slot only; to be confirmed on the console. |
+| `tap` | `slots` (list), `window?` (default 4) | button | Tap time is taken at the key press. Moving average of the last `window` intervals; a gap of 2 s or more starts over. Writes the beat period as-is to `/fx/N/time` of each listed slot. No multiplier: the delay's own `fact` (subdivision) stays on the console and can be mapped like any param. Slots without a `time` param in ms (e.g. BBD-DL) are skipped. Tap state is per slot set; the WING has no global tempo. |
 | `refresh` | — | button | Reconnects if needed, polls state and rescans the FX slots (and so the delays). |
 | `wait` | `ms` | step | |
 | `set` | `path`, `value` | button | Advanced: writes any WING parameter by path, for things the library doesn't cover yet. |
@@ -105,7 +105,6 @@ At slow speeds each tick is exactly one step. Faster turning multiplies the *num
   "version": 1,
   "console": { "ip": "192.168.1.62", "discover": true },
   "pad": { "background": [22, 255, 47], "cancel_ms": 400 },
-  "tap_tempo": { "slots": { "3": 1, "4": 0.5 } },
   "macros": {
     "band_out": {
       "retrigger": "ignore",
@@ -127,7 +126,7 @@ At slow speeds each tick is exactly one step. Faster turning multiplies the *num
         "2":  { "trigger": "press", "do": [{ "do": "softmute", "target": "main/1", "op": "toggle", "time": 5 }] },
         "4":  { "trigger": "hold", "hold_ms": 800, "do": { "toggle": ["band_out", "band_in"] },
                 "led": { "bind": "softmute:dca/1", "on": "red", "off": "green" } },
-        "13": { "trigger": "press", "do": [{ "do": "tap" }] },
+        "13": { "trigger": "press", "do": [{ "do": "tap", "slots": [3, 4] }] },
         "16": { "trigger": "press", "do": [{ "do": "refresh" }], "led": { "bind": "connected", "on": "off", "off": "red" } }
       },
       "encoders": {

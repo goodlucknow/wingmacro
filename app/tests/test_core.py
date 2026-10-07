@@ -46,7 +46,7 @@ def make_engine(buttons, **pad):
     cfg = {"pad": {"cancel_ms": 100, **pad}, "macros": {}, "layers": {"0": {"buttons": buttons}}}
     eng = Engine(lambda: cfg, ctx=None)
     fired = []
-    eng.run = lambda steps, key, retrig="restart": fired.append(steps[0]["v"])
+    eng.run = lambda steps, key, *a: fired.append(steps[0]["v"])
     return eng, fired
 
 
@@ -74,8 +74,31 @@ def test_toggle_and_layer_fallback():
            "layers": {"0": {"buttons": {"1": {"do": {"toggle": ["a", "b"]}}}}, "2": {"buttons": {}}}}
     eng = Engine(lambda: cfg, ctx=None)
     fired = []
-    eng.run = lambda steps, key, retrig="restart": fired.append(steps[0]["v"])
+    eng.run = lambda steps, key, *a: fired.append(steps[0]["v"])
     eng.layer = 2  # falls back to layer 0
     for _ in range(3):
         eng.press(1, 0); eng.release(1, 0)
     assert fired == ["A", "B", "A"]
+
+
+def test_tap_moving_average():
+    from types import SimpleNamespace
+    from wingmacro.actions import a_tap, Context
+    from wingmacro.wing import NodeDef, T_LINF
+    written = []
+
+    class FakeWing:
+        async def defs(self, path):
+            return [NodeDef("time", "TIME", 1, T_LINF, "ms", False, 1.0, 3000.0)]
+        async def set(self, path, v):
+            written.append((path, v))
+    ctx = Context(FakeWing(), lambda: {})
+
+    async def go():
+        for t in [0.0, 0.5, 1.0, 1.5, 2.0, 2.6]:  # 500 ms x4, then one 600 ms interval
+            await a_tap(ctx, {"slots": [3], "_t0": 100 + t})
+        await a_tap(ctx, {"slots": [3], "_t0": 110.0})  # gap >= 2 s: starts over, no write
+    asyncio.run(go())
+    assert written[:4] == [("/fx/3/time", 500.0)] * 4
+    assert written[4] == ("/fx/3/time", 525.0)  # window of 4 intervals: (500*3+600)/4
+    assert len(written) == 5

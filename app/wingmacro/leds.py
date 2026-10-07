@@ -51,7 +51,7 @@ class Leds:
         if d == "mgrp":
             return {"bind": f"mgrp:{s['n']}", "on": "red"}
         if d == "tap":
-            return {"bind": "tap"}
+            return {"bind": "tap:" + ",".join(str(x) for x in s.get("slots", []))}
         return None
 
     def paths(self):
@@ -125,8 +125,8 @@ class Leds:
             c = bg
             r = self._rule(m)
             if isinstance(r, dict):
-                if r.get("bind") == "tap":
-                    c = self._tap(now, bg)
+                if r.get("bind", "").startswith("tap"):
+                    c = self._tap(now, bg, r["bind"])
                 else:
                     s = self._state(r.get("bind", ""))
                     if s == "fading":
@@ -153,12 +153,12 @@ class Leds:
                 out[idx] = target if int(e / 0.075) % 2 == 0 else OFF
         return out
 
-    def _tap(self, now, bg):
-        taps, ms = self.ctx.taps, self.ctx.tap_ms
-        if not taps or not ms:
+    def _tap(self, now, bg, bind):
+        slots = bind.partition(":")[2]
+        st = self.ctx.taps.get(tuple(sorted(int(x) for x in slots.split(",") if x)))
+        if not st or not st["ms"]:
             return bg
-        period = ms / 1000
-        since = (now - taps[-1]) % period
+        since = (now - st["t"][-1]) % (st["ms"] / 1000)
         return FLASH if since < 0.08 else bg
 
     async def run(self):

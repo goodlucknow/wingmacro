@@ -12,7 +12,8 @@ NEG_INF = -144.0
 FLOOR = -89.5  # lowest level above -inf (verified: -89.6 snaps to -inf)
 FADE_END = -90.0
 MAX_DB = 10.0
-DELAYS = {"ST-DL", "TAP-DL", "TAPE-DL", "DEL/REV"}  # BBD-DL excluded (uses /dly)
+TAP_RESET = 2.0  # s gap that starts a new tap sequence
+TAP_WINDOW = 4  # intervals in the moving average
 
 
 # --- targets --------------------------------------------------------------
@@ -61,8 +62,7 @@ class Context:
         self.softmute = {}  # target -> "down" | "up" | "fading_down" | "fading_up"
         self.fx_models = {}  # slot -> model name
         self.fx_defs = {}  # slot -> {param: NodeDef}
-        self.taps = []
-        self.tap_ms = None
+        self.taps = {}  # slots key -> {"t": [press times], "ms": period or None}
         self.on_beat = []  # fn(period_s)
 
     async def fx_def(self, slot, param):
@@ -163,33 +163,30 @@ async def _fade(ctx, target, op, secs):
             del ctx.fades[target]
 
 
+def tap_key(p):
+    return tuple(sorted(int(x) for x in p.get("slots", [])))
+
+
 async def a_tap(ctx, p, ticks=None):
-    now = time.monotonic()
-    if ctx.taps and now - ctx.taps[-1] >= 2.0:
-        ctx.taps = []
-    ctx.taps = (ctx.taps + [now])[-8:]
-    if len(ctx.taps) < 2:
+    """Moving average of the last TAP_WINDOW tap intervals, written as-is to /fx/N/time of each
+    slot in `slots`. The delay's own `fact` (subdivision) stays on the console. Slots without a
+    `time` param in ms (e.g. BBD-DL, which uses /dly) are skipped."""
+    st = ctx.taps.setdefault(tap_key(p), {"t": [], "ms": None})
+    now = p.get("_t0", time.monotonic())  # press time, so release timing doesn't add jitter
+    if st["t"] and now - st["t"][-1] >= TAP_RESET:
+        st["t"] = []
+    st["t"] = (st["t"] + [now])[-(int(p.get("window", TAP_WINDOW)) + 1):]
+    if len(st["t"]) < 2:
         return
-    period = (ctx.taps[-1] - ctx.taps[0]) / (len(ctx.taps) - 1)
-    ctx.tap_ms = period * 1000
-    for cb in ctx.on_beat:
-        cb(period)
-    slots = p.get("slots") or ctx.cfg().get("tap_tempo", {}).get("slots", {})
-    if isinstance(slots, list):
-        slots = {s: 1 for s in slots}
-    for slot, mult in slots.items():
-        slot = int(slot)
-        model = ctx.fx_models.get(slot) or await ctx.wing.value(f"/fx/{slot}/mdl")
-        if model not in DELAYS:
-            log.info("tap: fx %d is %s, not a tap-tempo delay; skipped", slot, model)
-            continue
+    period = (st["t"][-1] - st["t"][0]) / (len(st["t"]) - 1)
+    st["ms"] = period * 1000
+    for slot in tap_key(p):
         d = await ctx.fx_def(slot, "time")
-        if d is None:
+        if d is None or d.unit != "ms" or d.readonly:
+            log.info("tap: fx %d (%s) has no time param in ms; skipped", slot, ctx.fx_models.get(slot))
             continue
-        ms = ctx.tap_ms * float(mult)
-        if d.min is not None:
-            ms = min(max(ms, d.min), d.max)
-        await ctx.wing.set(f"/fx/{slot}/time", int(round(ms)) if d.type == W.T_INT else float(ms))
+        ms = min(max(st["ms"], d.min), d.max) if d.min is not None else st["ms"]
+        await ctx.wing.set(f"/fx/{slot}/time", int(round(ms)) if d.type == W.T_INT else round(ms, 1))
 
 
 async def a_refresh(ctx, p, ticks=None):

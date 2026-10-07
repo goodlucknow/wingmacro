@@ -18,7 +18,7 @@ async def start_web(app, host, port):
             "pad": {"connected": bool(p and p.connected), "layer": app.engine.layer},
             "fx": {k: v for k, v in app.ctx.fx_models.items() if v and v != "NONE"},
             "events": app.engine.log[-20:],
-            "tap_ms": app.ctx.tap_ms,
+            "tap_ms": {",".join(map(str, k)): v["ms"] for k, v in app.ctx.taps.items()},
         })
 
     async def get_config(_):
