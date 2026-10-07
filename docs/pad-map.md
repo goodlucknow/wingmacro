@@ -1,6 +1,7 @@
 # Pad map (firmware ↔ app contract)
 
-All MIDI on **channel 1**, velocity 127. Keys send note-on when pressed and note-off when released.
+All MIDI on **channel 1**, velocity 127; note-off is a real `0x80` message.
+Verified on hardware 2026-10-07 (keys, knob pushes, knob directions; big knob sends no MIDI). Keys send note-on when pressed and note-off when released.
 
 ## Notes
 
@@ -45,4 +46,3 @@ Firmware layer 0 holds everything; layers 1–3 are transparent (big knob stays 
   LEDs and the web UI always know which page is active.
 - Use of the 8 keys beyond the per-page buttons (page select, tap tempo, connect/refresh, spare).
 - Push without turn: optional button action per page?
-- Verify encoder directions and which small knob is "1" on hardware.
