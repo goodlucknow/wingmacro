@@ -270,3 +270,11 @@ textarea.raw { width: 100%; min-height: 360px; background: #050505; color: var(-
 .progress { height: 14px; background: #000; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
 .progress i { display: block; height: 100%; width: 0; background: var(--amber); transition: width .15s; }
 .wheel { display: block; width: 140px; height: 140px; margin-top: 8px; cursor: crosshair; touch-action: none; border-radius: 50%; }
+.tgl { border-left: 3px solid var(--amber); padding: 6px 0 6px 10px; margin-bottom: 10px; }
+.tgl.off { border-left-color: var(--faint); }
+.tglhead { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.tglhead b { font-size: 16px; letter-spacing: .06em; }
+.autolist { margin: 0 0 4px; padding-left: 22px; color: var(--text); }
+.autolist li { padding: 2px 0; }
+.key .tstate { position: absolute; left: 9%; top: 9%; font-size: 9px; font-weight: 700; color: var(--faint); }
+.key .tstate.on { color: var(--amber); }

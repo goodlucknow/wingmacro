@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 DEFAULT = {
-    "version": 1,
+    "version": 2,
     "console": {"ip": "", "discover": True},
     "pad": {"background": [22, 255, 47], "cancel_ms": 400, "hold_ms": 800},
     "macros": {},
@@ -47,8 +47,45 @@ def load(path):
     if not path.exists():
         save(path, DEFAULT)
     cfg = json.loads(path.read_text())
+    if migrate(cfg):
+        save(path, cfg)  # previous file kept as .json.bak
     validate(cfg)
     return cfg
+
+
+def _as_steps(do):
+    return [{"do": "macro", "name": do}] if isinstance(do, str) else list(do or [])
+
+
+def _migrate_mapping(b):
+    """v1 -> v2: `do` was a step list, a macro name, or {"toggle": [A, B]}. Now `do` is always a step
+    list; toggling is the mapping's own (`toggle`, with `off` or an automatic reverse)."""
+    do = b.get("do")
+    if isinstance(do, dict) and "toggle" in do:
+        on, off = (list(do["toggle"]) + [[], []])[:2]
+        b.update(do=_as_steps(on), off=_as_steps(off), toggle=True, off_auto=False)
+    else:
+        b["do"] = _as_steps(do)
+    b.pop("led", None)
+    steps = b["do"]
+    if (not b.get("toggle") and b.get("trigger") != "momentary" and len(steps) == 1
+            and steps[0].get("do") in ("mute", "mgrp", "softmute") and steps[0].get("op", "toggle") == "toggle"):
+        b.update(do=[dict(steps[0], op="down" if steps[0]["do"] == "softmute" else "on")], toggle=True, off_auto=True)
+
+
+def migrate(cfg):
+    if cfg.get("version", 1) >= 2:
+        return False
+    for layer in cfg.get("layers", {}).values():
+        for b in layer.get("buttons", {}).values():
+            _migrate_mapping(b)
+        for e in layer.get("encoders", {}).values():
+            if "push" in e:
+                _migrate_mapping(e["push"])
+    for m in cfg.get("macros", {}).values():
+        m.pop("retrigger", None)
+    cfg["version"] = 2
+    return True
 
 
 def save(path, cfg):
@@ -66,23 +103,20 @@ def validate(cfg):
     """Raise ValueError with a readable message for structural problems."""
     from .actions import ACTIONS
 
-    def steps_of(do, where):
-        if isinstance(do, str):
-            if do not in cfg.get("macros", {}):
-                raise ValueError(f"{where}: unknown macro {do!r}")
-            return []
-        if isinstance(do, dict) and "toggle" in do:
-            if len(do["toggle"]) != 2:
-                raise ValueError(f"{where}: toggle needs two macros")
-            return [s for d in do["toggle"] for s in steps_of(d, where)]
-        if isinstance(do, list):
-            return do
-        raise ValueError(f"{where}: 'do' must be a macro name, a step list or a toggle")
-
     def check_steps(steps, where):
+        if not isinstance(steps, list):
+            raise ValueError(f"{where}: actions must be a list")
         for i, st in enumerate(steps):
             if st.get("do") not in ACTIONS:
                 raise ValueError(f"{where} step {i + 1}: unknown action {st.get('do')!r}")
+            if st["do"] == "macro" and st.get("name") not in cfg.get("macros", {}):
+                raise ValueError(f"{where} step {i + 1}: unknown macro {st.get('name')!r}")
+
+    def check_button(b, where):
+        if b.get("trigger", "press") not in ("press", "hold", "momentary"):
+            raise ValueError(f"{where}: trigger must be press, hold or momentary")
+        check_steps(b.get("do", []), where)
+        check_steps(b.get("off", []), where + " (off)")
 
     if not isinstance(cfg, dict) or not isinstance(cfg.get("layers"), dict):
         raise ValueError("config needs a 'layers' object")
@@ -94,17 +128,14 @@ def validate(cfg):
         for wm, b in layer.get("buttons", {}).items():
             if not wm.isdigit() or not 1 <= int(wm) <= 32:
                 raise ValueError(f"layer {ln} button {wm!r}: WM id must be 1-32")
-            if b.get("trigger", "press") not in ("press", "hold", "momentary"):
-                raise ValueError(f"layer {ln} WM{wm}: trigger must be press, hold or momentary")
-            check_steps(steps_of(b.get("do", []), f"layer {ln} WM{wm}"), f"layer {ln} WM{wm}")
+            check_button(b, f"layer {ln} WM{wm}")
         for knob, e in layer.get("encoders", {}).items():
             if knob not in ("left", "right"):
                 raise ValueError(f"layer {ln} encoder {knob!r}: must be left or right")
             for k in ("turn", "push_turn"):
                 check_steps(e.get(k, []), f"layer {ln} {knob} {k}")
             if "push" in e:
-                check_steps(steps_of(e["push"].get("do", []), f"layer {ln} {knob} push"),
-                            f"layer {ln} {knob} push")
+                check_button(e["push"], f"layer {ln} {knob} push")
 
 
 def colour(c, default=(0, 0, 0)):

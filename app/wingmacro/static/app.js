@@ -47,6 +47,7 @@ const ACT = {
   fx_cycle:  { label: "FX option (cycle)", g: "Effects", rot: true, both: true, f: [["slot", "fxslot"], ["param", "fxenum"], ["dir", "dir"]] },
   fx_set:    { label: "Set FX parameter", g: "Effects", f: [["slot", "fxslot"], ["param", "fxparam"], ["value", "fxvalue"]] },
   tap:       { label: "Tap tempo", g: "Effects", f: [["slots", "fxslots"], ["window", "num", { ph: "4", step: 1, min: 1 }]] },
+  macro:     { label: "Run macro", g: "Macros", f: [["name", "macro"]] },
   led:       { label: "Key LED", g: "Pad", f: [["colour", "ledcolour"], ["effect", "effect"], ["key", "ledtarget"]] },
   wait:      { label: "Wait", g: "System", f: [["ms", "num", { unit: "ms", def: 500, step: 50, min: 0 }]] },
   refresh:   { label: "Refresh console", g: "System", f: [] },
@@ -184,17 +185,14 @@ function targetLabel(t) {
 function fxName(slot) { const m = S.fx[slot]; return m && m !== "NONE" ? m : "empty"; }
 function macroNames() { return Object.keys(S.cfg.macros || {}); }
 
-function firstSteps(doV) {
-  if (typeof doV === "string") return S.cfg.macros?.[doV]?.steps || [];
-  if (doV && doV.toggle) return firstSteps(doV.toggle[0]);
-  return doV || [];
-}
+function firstSteps(steps) { return Array.isArray(steps) ? steps : []; }
 function summary(m) {                       // -> {cap, col, name, act}
   if (!m) return { cap: "", name: "", act: "" };
   const doV = m.do;
   let r = { cap: "", col: null, name: "", act: "" };
   const st = firstSteps(doV)[0];
-  if (st) {
+  if (st?.do === "macro") r = { cap: "MACRO", name: st.name || "Macro", act: "Macro" };
+  else if (st) {
     const t = targetLabel(st.target);           // safe when no target has been picked yet
     switch (st.do) {
       case "mute": r = { cap: t.cap, col: t.col, name: t.name, act: "Mute" }; break;
@@ -206,8 +204,7 @@ function summary(m) {                       // -> {cap, col, name, act}
       default: r = { cap: "", name: ACT[st.do]?.label || st.do, act: "" };
     }
   }
-  if (typeof doV === "string") { r.name = doV; r.act = "Macro"; r.cap ||= "MACRO"; }
-  if (doV && doV.toggle) r.act = "A/B " + r.act;
+  if (m.toggle) r.act = "Toggle · " + r.act;
   if (m.name) r.name = m.name;
   if (m.trigger === "hold") r.act = "Hold · " + r.act;
   if (m.trigger === "momentary") r.act = "While held · " + r.act;
@@ -280,6 +277,7 @@ function renderPad() {
       h("span", { class: "nm" }, m ? s.name : "—"),
       h("span", { class: "act" }, s.act),
       m && from !== S.layer && h("span", { class: "badge" }, `L${from + 1}`),
+      m?.toggle && h("span", { class: "tstate" + (live?.toggles?.[`${from}/${wm}`] ? " on" : "") }, live?.toggles?.[`${from}/${wm}`] ? "ON" : "OFF"),
       h("span", { class: "wm" }, String(wm).padStart(2, "0")));
   }));
 
@@ -353,7 +351,7 @@ function keyEditor(idx) {
     sect("Trigger",
       h("div", { class: "row" },
         seg([["momentary", "Momentary"], ["press", "Press"], ["hold", "Hold"]], m.trigger || "press", (v) => {
-          m.trigger = v; if (v === "momentary" && m.do?.toggle) m.do = m.do.toggle[0]; commit(); }, "fixed"),
+          m.trigger = v; if (v === "momentary") delete m.toggle; commit(); }, "fixed"),
         // always laid out, hidden unless Hold, so the row never shifts
         h("div", { class: "row", style: m.trigger === "hold" ? "" : "visibility:hidden" },
           field("Hold time", h("span", {}, numInput(m.hold_ms, (v) => { m.hold_ms = v; }, { ph: pad.hold_ms ?? 800, step: 50, min: 100 }), h("span", { class: "unit" }, "ms"))),
@@ -362,7 +360,7 @@ function keyEditor(idx) {
         hold: "Hold until the key lights fully, then release. It flashes while armed; tap it again within the cancel window to cancel.",
         momentary: "Acts the moment the key goes down and stays active while held (e.g. talkback). On release, everything it changed is put back and soft mutes fade back.",
       }[m.trigger] || "Fires when the key is released.")),
-    sect("Action", doEditor(() => m.do, (v) => { m.do = v; }, wm, m.trigger === "momentary")),
+    sect("Actions", actionsEditor(m, m.trigger === "momentary")),
     sect("LED", h("p", { class: "hint" }, "Key colour is the key's resting colour. Macros change it with the Key LED action, e.g. a dim red here and full red in the macro."),
       field("Key colour", colourPicker(m.background, (v) => { m.background = v; }, { allowNone: true, noneLabel: "Pad background" })),
       h("div", { style: "height:10px" }),
@@ -391,38 +389,58 @@ function knobEditor(knob) {
     sect("Push + turn", h("p", { class: "hint" }, "Used while the knob is held down. Leave empty to use Turn."),
       stepList(m.push_turn ||= [], true)),
     sect("Push (no turn)", h("p", { class: "hint" }, "Fires on release, only if the knob wasn't turned while held."),
-      m.push ? doEditor(() => m.push.do, (v) => { m.push.do = v; }, knob)
+      m.push ? actionsEditor(m.push, false)
         : h("button", { class: "btn", onclick: () => { m.push = { trigger: "press", do: [] }; commit(); } }, "+ Add push action"),
       m.push && h("button", { class: "btn sm ghost", style: "margin-top:6px", onclick: () => { delete m.push; commit(); } }, "Remove push action")));
   return [head(h("button", { class: "btn sm danger", onclick: () => { delete layerCfg(S.layer).encoders[knob]; commit(); } }, "Clear")), body];
 }
 
-// ---------------------------------------------------------------------------- do / steps
-function doEditor(get, set, key, noToggle) {
-  const v = get();
-  const mode = typeof v === "string" ? "macro" : v && v.toggle ? "toggle" : "steps";
-  const modes = [["steps", "Actions"], ["macro", "Macro"], ...(noToggle ? [] : [["toggle", "Toggle A/B"]])];
-  const modeSeg = seg(modes, mode, (nv) => {
-    if (nv === mode) return;
-    if (nv === "steps") set(typeof v === "string" ? clone(S.cfg.macros?.[v]?.steps || []) : []);
-    if (nv === "macro") set(macroNames()[0] || newMacro());
-    if (nv === "toggle") set({ toggle: [Array.isArray(v) ? v : [], []] });
-    commit();
-  }, "sm");
-  let inner;
-  if (mode === "steps") inner = stepList(v, false);
-  else if (mode === "macro") inner = macroPick(v, set);
-  else inner = h("div", {}, ["A · 1st press", "B · 2nd press"].map((lbl, i) => {
-    const sub = v.toggle[i];
-    const subMode = typeof sub === "string" ? "macro" : "steps";
-    return h("div", { style: "margin:8px 0 10px" },
-      h("div", { class: "row", style: "margin-bottom:6px;align-items:center" }, h("b", { style: "color:var(--amber)" }, lbl),
-        seg([["steps", "Actions"], ["macro", "Macro"]], subMode, (nv) => {
-          if (nv !== subMode) { v.toggle[i] = nv === "macro" ? (macroNames()[0] || newMacro()) : []; commit(); }
+// ---------------------------------------------------------------------------- actions (single / toggle)
+// Toggle belongs to the key: it remembers on/off itself and runs its On list, then its Off list.
+// Actions always set a state (on/off, fade out/in); they never flip it.
+const INVERSE = { mute: { on: "off", off: "on" }, mgrp: { on: "off", off: "on" }, softmute: { down: "up", up: "down" } };
+function inverseSteps(steps) {              // keep in sync with actions.inverse_steps
+  const out = [];
+  for (const st of [...(steps || [])].reverse()) {
+    if (INVERSE[st.do]?.[st.op]) out.push({ ...st, op: INVERSE[st.do][st.op] });
+    else if (st.do === "led") out.push({ do: "led", colour: "base", ...(st.key ? { layer: st.layer, key: st.key } : {}) });
+  }
+  return out;
+}
+function stepText(st) {
+  const a = ACT[st.do]?.label || st.do;
+  const op = { on: "on", off: "off", down: "fade out", up: "fade in" }[st.op] || "";
+  if (st.do === "led") return st.colour === "base" ? "Key LED: back to key colour" : `Key LED: ${typeof st.colour === "string" ? st.colour : "custom"}`;
+  if (st.do === "mgrp") return `Mute group ${st.n} ${op}`;
+  return `${a} ${op}${st.target ? " · " + targetLabel(st.target).name : ""}`.trim();
+}
+function actionsEditor(m, momentary) {
+  m.do ||= [];
+  const toggle = !!m.toggle && !momentary;
+  const out = [];
+  if (!momentary) out.push(h("div", { style: "margin-bottom:10px" }, field("Behaviour",
+    seg([[false, "Single"], [true, "Toggle"]], toggle, (v) => {
+      if (v) { m.toggle = true; if (m.off_auto === undefined) m.off_auto = true; } else { delete m.toggle; delete m.off; delete m.off_auto; }
+      commit();
+    }, "sm"))));
+  if (!toggle) { out.push(stepList(m.do, false)); return h("div", {}, out); }
+  const auto = m.off_auto !== false;
+  const inv = inverseSteps(m.do);
+  const skipped = m.do.filter((st) => !INVERSE[st.do]?.[st.op] && st.do !== "led").map((st) => ACT[st.do]?.label || st.do);
+  out.push(h("div", { class: "tgl" }, h("div", { class: "tglhead" }, h("b", {}, "ON"), h("span", { class: "muted" }, "first press")), stepList(m.do, false)),
+    h("div", { class: "tgl off" },
+      h("div", { class: "tglhead" }, h("b", {}, "OFF"), h("span", { class: "muted" }, "next press"),
+        seg([[true, "Automatic"], [false, "Custom"]], auto, (v) => {
+          if (v) { m.off_auto = true; delete m.off; } else { m.off = clone(inv); m.off_auto = false; }
+          commit();
         }, "sm")),
-      subMode === "macro" ? macroPick(sub, (nv) => { v.toggle[i] = nv; }) : stepList(sub, false));
-  }), h("p", { class: "hint" }, "Each press alternates between A and B."));
-  return h("div", {}, h("div", { style: "margin-bottom:8px" }, modeSeg), inner);
+      auto ? h("div", {},
+        inv.length ? h("ol", { class: "autolist" }, inv.map((st) => h("li", {}, stepText(st)))) : h("p", { class: "hint" }, "Nothing to undo yet."),
+        h("p", { class: "hint" }, "The On actions reversed: mutes and mute groups flipped, soft mutes faded back, key colours restored."
+          + (skipped.length ? ` Not reversed: ${[...new Set(skipped)].join(", ")}. Choose Custom to set the Off actions yourself.` : "")))
+        : stepList(m.off ||= [], false)),
+    h("p", { class: "hint" }, "The key remembers whether it's on; each press runs the other list."));
+  return h("div", {}, out);
 }
 function macroPick(name, set) {
   return h("div", { class: "row" },
@@ -445,8 +463,9 @@ function stepList(steps, rotary) {
     const st = { do: d };
     for (const [k, t, o] of ACT[d].f) {
       if (o?.def != null) st[k] = o.def;
-      if (t === "op") st[k] = "toggle";
-      if (t === "opsoft") st[k] = "toggle";
+      if (t === "op") st[k] = "on";
+      if (t === "opsoft") st[k] = "down";
+      if (t === "macro") st[k] = macroNames()[0] || newMacro();
       if (t === "fxslot") st[k] = firstFxSlot();
       if (t === "fxslots") st[k] = [];
       if (t === "mgrp") st[k] = 1;
@@ -487,8 +506,9 @@ function fieldFor(st, k, t, o) {
   switch (t) {
     case "target": case "targetch":
       return field(t === "targetch" ? "Channel" : "Target", targetBtn(st[k], (v) => { st[k] = v; commit(); }, t === "targetch"));
-    case "op": return field("Mode", seg([["toggle", "Toggle"], ["on", "On"], ["off", "Off"]], st[k] || "toggle", (v) => { st[k] = v; commit(); }, "sm"));
-    case "opsoft": return field("Mode", seg([["toggle", "Toggle"], ["down", "Fade out"], ["up", "Fade in"]], st[k] || "toggle", (v) => { st[k] = v; commit(); }, "sm"));
+    case "op": return field("Set", seg([["on", "On"], ["off", "Off"], ...(st[k] === "toggle" || !st[k] ? [["toggle", "Flip (old)"]] : [])], st[k] || "toggle", (v) => { st[k] = v; commit(); }, "sm"));
+    case "opsoft": return field("Set", seg([["down", "Fade out"], ["up", "Fade in"], ...(st[k] === "toggle" || !st[k] ? [["toggle", "Flip (old)"]] : [])], st[k] || "toggle", (v) => { st[k] = v; commit(); }, "sm"));
+    case "macro": return field("Macro", macroPick(st[k], (v) => { st[k] = v; }));
     case "dir": return field("Direction", seg([["next", "Next"], ["prev", "Prev"]], st[k] || "next", (v) => { st[k] = v; commit(); }, "sm"));
     case "num": return field(k === "step" ? "Step" : k === "time" ? "Fade time" : k, h("span", {}, numInput(st[k], (v) => { st[k] = v; }, o), o.unit && h("span", { class: "unit" }, o.unit)));
     case "text": return field(k, h("input", { type: "text", value: st[k] ?? "", placeholder: o.ph,
@@ -636,23 +656,22 @@ function colourPicker(val, set, { allowNone = false, noneLabel = "Background" } 
   return wrap;
 }
 // ---------------------------------------------------------------------------- macros page
-function macroUsers(name) {
-  const users = [];
-  const uses = (d) => d === name || (d && d.toggle && d.toggle.includes(name));
+function allLists() {                       // [where, steps] for every action list in the config
+  const out = [];
   for (const [l, L] of Object.entries(S.cfg.layers || {})) {
-    for (const [wm, b] of Object.entries(L.buttons || {})) if (uses(b.do)) users.push(`L${+l + 1} WM${wm}`);
-    for (const [k, e] of Object.entries(L.encoders || {})) if (e.push && uses(e.push.do)) users.push(`L${+l + 1} ${k} push`);
+    for (const [wm, b] of Object.entries(L.buttons || {})) out.push([`L${+l + 1} WM${wm}`, b.do], [`L${+l + 1} WM${wm}`, b.off]);
+    for (const [k, e] of Object.entries(L.encoders || {})) if (e.push) out.push([`L${+l + 1} ${k} push`, e.push.do], [`L${+l + 1} ${k} push`, e.push.off]);
   }
-  return users;
+  for (const [n, mc] of Object.entries(S.cfg.macros || {})) out.push([`macro ${n}`, mc.steps]);
+  return out.filter(([, st]) => Array.isArray(st));
+}
+function macroUsers(name) {
+  return [...new Set(allLists().filter(([, st]) => st.some((x) => x.do === "macro" && x.name === name)).map(([w]) => w))];
 }
 function renameMacro(old, nu) {
   if (!nu || nu === old || S.cfg.macros[nu]) return false;
   const ms = {}; for (const [k, v] of Object.entries(S.cfg.macros)) ms[k === old ? nu : k] = v; S.cfg.macros = ms;
-  const fix = (o, key) => { if (o[key] === old) o[key] = nu; else if (o[key]?.toggle) o[key].toggle = o[key].toggle.map((x) => (x === old ? nu : x)); };
-  for (const L of Object.values(S.cfg.layers || {})) {
-    for (const b of Object.values(L.buttons || {})) fix(b, "do");
-    for (const e of Object.values(L.encoders || {})) if (e.push) fix(e.push, "do");
-  }
+  for (const [, st] of allLists()) for (const x of st) if (x.do === "macro" && x.name === old) x.name = nu;
   S.macroSel = nu; return true;
 }
 function renderMacros() {
@@ -674,8 +693,7 @@ function renderMacros() {
         delete S.cfg.macros[S.macroSel]; S.macroSel = null; commit(); } }, "Delete"))),
     h("div", { class: "pbody" },
       sect("Name", nameIn),
-      sect("If triggered while running", seg([["restart", "Restart"], ["ignore", "Ignore"], ["parallel", "Run again"]], mc.retrigger || "restart", (v) => { mc.retrigger = v; commit(); }, "sm")),
-      sect("Steps", h("p", { class: "hint" }, "Run in order. Waits don't block other controls."), stepList(mc.steps ||= [], false)),
+      sect("Steps", h("p", { class: "hint" }, "A reusable list of actions. Keys run it with the Run macro action. Waits don't block other controls."), stepList(mc.steps ||= [], false)),
       sect("Used by", h("p", { class: "muted" }, users.join(", ") || "Not assigned to any control yet.")))];
   }
   return h("div", { class: "cols", style: "grid-template-columns:minmax(260px,380px) 1fr" },

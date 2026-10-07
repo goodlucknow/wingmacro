@@ -75,7 +75,7 @@ class Leds:
             if not m:
                 continue
             c = self.key_colour(l, idx, m, bg_default, now)
-            steps, _, _ = self.engine.resolve(m.get("do", []), None)
+            steps = self.engine.expand(m.get("do") or [])
             if steps and steps[0].get("do") == "tap":
                 c = self._tap(now, c, steps[0])
             out[idx] = c

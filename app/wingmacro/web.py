@@ -17,6 +17,7 @@ def _status(app):
         "pad": {"connected": bool(p and p.connected), "layer": app.engine.layer, "proto": p.proto if p else 0},
         "fx": {k: v for k, v in app.ctx.fx_models.items() if v and v != "NONE"},
         "tap_ms": {",".join(map(str, k)): v["ms"] for k, v in app.ctx.taps.items()},
+        "toggles": {f"{l}/{k}": on for (l, k), on in app.engine.toggles.items()},
     }
 
 

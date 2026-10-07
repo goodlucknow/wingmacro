@@ -319,9 +319,30 @@ async def _fx_step(ctx, p, ticks):
         await ctx.wing.set(path, new)
 
 
+async def a_macro(ctx, p, ticks=None):
+    """Placeholder: `macro` steps are expanded inline by the engine (Engine._steps)."""
+
+
+INVERSE_OPS = {"mute": {"on": "off", "off": "on"}, "mgrp": {"on": "off", "off": "on"},
+               "softmute": {"down": "up", "up": "down"}}
+
+
+def inverse_steps(steps):
+    """Automatic Off list for a toggle key: the On list reversed, with mutes/mute groups/soft mutes
+    flipped and key colours set back to the key's own colour. Other actions have no inverse."""
+    out = []
+    for s in reversed(steps):
+        d = s.get("do")
+        if d in INVERSE_OPS and s.get("op") in INVERSE_OPS[d]:
+            out.append(dict(s, op=INVERSE_OPS[d][s["op"]]))
+        elif d == "led":
+            out.append({k: v for k, v in s.items() if k in ("do", "layer", "key")} | {"colour": "base"})
+    return out
+
+
 ACTIONS = {
     "mute": a_mute, "softmute": a_softmute, "mgrp": a_mgrp, "level_set": a_level_set,
     "level": a_level, "gain": a_gain, "fx": a_fx, "fx_cycle": a_fx_cycle, "fx_set": a_fx_set,
-    "tap": a_tap, "refresh": a_refresh, "wait": a_wait, "set": a_set, "led": a_led,
+    "tap": a_tap, "refresh": a_refresh, "wait": a_wait, "set": a_set, "led": a_led, "macro": a_macro,
 }
 ROTARY = {"level", "gain", "fx", "fx_cycle"}

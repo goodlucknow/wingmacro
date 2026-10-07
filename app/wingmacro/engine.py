@@ -4,7 +4,7 @@ import copy
 import logging
 import time
 
-from .actions import ACTIONS, ROTARY
+from .actions import ACTIONS, ROTARY, inverse_steps
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class Engine:
         self.layer = 0
         self.buttons = {}  # wm -> state
         self.knobs = {k: {"held": False, "turned": False, "t": 0.0, "dir": 0} for k in KNOBS}
-        self.toggles = {}  # (layer, wm/knob) -> 0/1
+        self.toggles = {}  # (mapping layer, wm or "push:<knob>") -> True while a toggle key is on
         self.running = {}  # macro key -> task
         self.log = []  # recent events for the web UI
 
@@ -63,17 +63,28 @@ class Engine:
     def encoder_map(self, knob, layer=None):
         return self._lookup("encoders", knob, layer)
 
-    def resolve(self, do, toggle_key=None, advance=False):
-        """-> (steps, macro_key, retrigger). Toggles alternate between their two entries."""
-        if isinstance(do, dict) and "toggle" in do:
-            i = self.toggles.get(toggle_key, 0)
-            if advance:
-                self.toggles[toggle_key] = 1 - i
-            return self.resolve(do["toggle"][i])
-        if isinstance(do, str):
-            m = self.cfg().get("macros", {}).get(do, {})
-            return m.get("steps", []), do, m.get("retrigger", "restart")
-        return do or [], None, "restart"
+    def steps_for(self, m, key, advance=False):
+        """Steps a button / knob-push mapping runs now. A toggle mapping keeps its own on/off state
+        (deliberately not read from the console) and runs its On list, then its Off list."""
+        on_steps = m.get("do") or []
+        if not m.get("toggle"):
+            return on_steps
+        on = self.toggles.get(key, False)
+        if advance:
+            self.toggles[key] = not on
+        if not on:
+            return on_steps
+        return inverse_steps(on_steps) if m.get("off_auto", True) else (m.get("off") or [])
+
+    def expand(self, steps, depth=0):
+        """Steps with `macro` calls inlined (for inspection; running expands lazily)."""
+        out = []
+        for st in steps:
+            if st.get("do") == "macro" and depth < 8:
+                out += self.expand(self.cfg().get("macros", {}).get(st.get("name"), {}).get("steps", []), depth + 1)
+            else:
+                out.append(st)
+        return out
 
     # --- events -----------------------------------------------------------
 
@@ -161,8 +172,7 @@ class Engine:
         if st["map"].get("trigger", "press") != "hold":  # hold keys animate in _armed_fire
             self._led(st, "confirm")
         key = (st["layer"], st["wm"])
-        steps, mkey, retrig = self.resolve(st["map"].get("do", []), key, advance=True)
-        self.run(steps, mkey or key, retrig, st["t0"], self._src(st))
+        self.run(self.steps_for(st["map"], key, advance=True), key, t0=st["t0"], src=self._src(st))
 
     @staticmethod
     def _src(st):
@@ -173,8 +183,8 @@ class Engine:
         """Run on key down. Steps run against a Recorder so the release can restore."""
         st["phase"] = "held"
         st["record"] = {}
-        steps, _, _ = self.resolve(st["map"].get("do", []), None)  # a toggle uses its A side
-        st["steps"] = steps
+        steps = st["map"].get("do") or []
+        st["steps"] = self.expand(steps)
         ctx = copy.copy(self.ctx)
         ctx.wing = Recorder(self.ctx.wing, st["record"])
         ctx.led_record = st["led_record"] = {}
@@ -223,25 +233,38 @@ class Engine:
 
     async def _run(self, steps, key, t0=None, src=None, ctx=None):
         try:
-            for st in steps:
-                fn = ACTIONS.get(st.get("do"))
-                if fn is None:
-                    log.warning("unknown action %r", st.get("do"))
-                    continue
-                try:
-                    # soft mutes always use the real client: a momentary release fades them back
-                    c = self.ctx if ctx is None or st["do"] == "softmute" else ctx
-                    if st["do"] in ROTARY:
-                        await fn(c, st, int(st.get("ticks", 1)))
-                    else:
-                        await fn(c, dict(st, _t0=t0, _src=src))
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    log.exception("action %s failed", st.get("do"))
+            await self._steps(steps, t0, src, ctx, 0)
         finally:
             if self.running.get(key) is asyncio.current_task():
                 del self.running[key]
+
+    async def _steps(self, steps, t0, src, ctx, depth):
+        for st in steps:
+            if st.get("do") == "macro":  # run a shared macro inline
+                if depth >= 8:
+                    log.warning("macro %r: nested too deep", st.get("name"))
+                    continue
+                m = self.cfg().get("macros", {}).get(st.get("name"))
+                if m is None:
+                    log.warning("macro %r not found", st.get("name"))
+                    continue
+                await self._steps(m.get("steps", []), t0, src, ctx, depth + 1)
+                continue
+            fn = ACTIONS.get(st.get("do"))
+            if fn is None:
+                log.warning("unknown action %r", st.get("do"))
+                continue
+            try:
+                # soft mutes always use the real client: a momentary release fades them back
+                c = self.ctx if ctx is None or st["do"] == "softmute" else ctx
+                if st["do"] in ROTARY:
+                    await fn(c, st, int(st.get("ticks", 1)))
+                else:
+                    await fn(c, dict(st, _t0=t0, _src=src))
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("action %s failed", st.get("do"))
 
     # --- encoders ---------------------------------------------------------
 
@@ -255,8 +278,8 @@ class Engine:
             return
         l, m = self.encoder_map(knob)
         if m and "push" in m:
-            steps, mkey, retrig = self.resolve(m["push"].get("do", []), (l, knob), advance=True)
-            self.run(steps, mkey or (l, knob, "push"), retrig)
+            key = (l, "push:" + knob)
+            self.run(self.steps_for(m["push"], key, advance=True), key)
 
     async def turn(self, knob, direction):
         k = self.knobs[knob]

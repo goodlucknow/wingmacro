@@ -206,7 +206,9 @@ class App:
         self.wing.set_host(ip or None)
 
     async def apply_config(self, cfg):
-        """Validate, save and switch to a new config (from the web UI)."""
+        """Validate, save and switch to a new config (from the web UI or an import).
+        Old-format configs (e.g. from a tab opened before an update) are converted first."""
+        C.migrate(cfg)
         C.validate(cfg)
         C.save(self.cfg_path, cfg)
         self.cfg = cfg

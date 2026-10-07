@@ -46,7 +46,7 @@ def make_engine(buttons, **pad):
     cfg = {"pad": {"cancel_ms": 100, **pad}, "macros": {}, "layers": {"0": {"buttons": buttons}}}
     eng = Engine(lambda: cfg, ctx=None)
     fired = []
-    eng.run = lambda steps, key, *a: fired.append(steps[0]["v"])
+    eng.run = lambda steps, key, *a, **k: fired.append(steps[0]["v"])
     return eng, fired
 
 
@@ -70,15 +70,16 @@ def test_hold_arm_fire_and_cancel():
 
 
 def test_toggle_and_layer_fallback():
-    cfg = {"pad": {}, "macros": {"a": {"steps": [{"v": "A"}]}, "b": {"steps": [{"v": "B"}]}},
-           "layers": {"0": {"buttons": {"1": {"do": {"toggle": ["a", "b"]}}}}, "2": {"buttons": {}}}}
+    cfg = {"pad": {}, "macros": {}, "layers": {"0": {"buttons": {"1": {
+        "toggle": True, "off_auto": False, "do": [{"v": "On"}], "off": [{"v": "Off"}]}}}, "2": {"buttons": {}}}}
     eng = Engine(lambda: cfg, ctx=None)
     fired = []
-    eng.run = lambda steps, key, *a: fired.append(steps[0]["v"])
+    eng.run = lambda steps, key, *a, **k: fired.append(steps[0]["v"])
     eng.layer = 2  # falls back to layer 0
     for _ in range(3):
         eng.press(1, 0); eng.release(1, 0)
-    assert fired == ["A", "B", "A"]
+    assert fired == ["On", "Off", "On"]
+    assert eng.toggles[(0, 1)] is True
 
 
 def test_tap_moving_average():
@@ -131,25 +132,42 @@ def test_led_actions_digico_style():
     class FakeWing:
         async def value(self, p): return 0
         async def set(self, p, v): pass
-    on = {"steps": [{"do": "led", "colour": "green"}]}
-    off = {"steps": [{"do": "led", "colour": "red"}]}
-    cfg = {"pad": {}, "macros": {"on": on, "off": off}, "layers": {"0": {"buttons": {
-        "1": {"do": {"toggle": ["on", "off"]}},
+    cfg = {"pad": {}, "macros": {"lit": {"steps": [{"do": "led", "colour": "green"}]}}, "layers": {"0": {"buttons": {
+        "1": {"toggle": True, "do": [{"do": "macro", "name": "lit"}, {"do": "led", "colour": "red"}]},   # auto Off
         "2": {"trigger": "momentary", "do": [{"do": "led", "colour": "amber", "effect": "flash"},
                                              {"do": "led", "colour": "blue", "layer": 1, "key": 1}]}}}}}
     ctx = Context(FakeWing(), lambda: cfg)
     eng = Engine(lambda: cfg, ctx)
 
     async def go():
-        eng.press(1, 0); eng.release(1, 0); await asyncio.sleep(0.01)
-        assert ctx.led_state[(0, 0)] == ("green", "solid")
-        eng.press(1, 0); eng.release(1, 0); await asyncio.sleep(0.01)
+        eng.press(1, 0); eng.release(1, 0); await asyncio.sleep(0.01)   # On: macro (green) then red
         assert ctx.led_state[(0, 0)] == ("red", "solid")
-        eng.press(2, 1); await asyncio.sleep(0.01)                 # momentary: own key + key 1
+        eng.press(1, 0); eng.release(1, 0); await asyncio.sleep(0.01)   # automatic Off: back to key colour
+        assert (0, 0) not in ctx.led_state
+        eng.press(1, 0); eng.release(1, 0); await asyncio.sleep(0.01)
+        eng.press(2, 1); await asyncio.sleep(0.01)                     # momentary: own key + key 1
         assert ctx.led_state[(0, 1)] == ("amber", "flash") and ctx.led_state[(0, 0)] == ("blue", "solid")
         eng.release(2, 1); await asyncio.sleep(0.01)
         assert (0, 1) not in ctx.led_state and ctx.led_state[(0, 0)] == ("red", "solid")
     asyncio.run(go())
+
+
+def test_inverse_steps_and_migration():
+    from wingmacro.actions import inverse_steps
+    from wingmacro.config import migrate
+    on = [{"do": "mgrp", "n": 1, "op": "on"}, {"do": "softmute", "target": "ch/1", "op": "down"},
+          {"do": "wait", "ms": 100}, {"do": "led", "colour": "red"}]
+    assert inverse_steps(on) == [{"do": "led", "colour": "base"}, {"do": "softmute", "target": "ch/1", "op": "up"},
+                                 {"do": "mgrp", "n": 1, "op": "off"}]
+    cfg = {"layers": {"0": {"buttons": {
+        "1": {"do": [{"do": "mute", "target": "ch/1", "op": "toggle"}]},
+        "2": {"do": {"toggle": ["a", [{"do": "refresh"}]]}, "led": {"bind": "connected"}},
+        "3": {"do": "a"}}, "encoders": {}}}, "macros": {"a": {"retrigger": "ignore", "steps": []}}}
+    assert migrate(cfg) and cfg["version"] == 2
+    b = cfg["layers"]["0"]["buttons"]
+    assert b["1"] == {"do": [{"do": "mute", "target": "ch/1", "op": "on"}], "toggle": True, "off_auto": True}
+    assert b["2"] == {"do": [{"do": "macro", "name": "a"}], "off": [{"do": "refresh"}], "toggle": True, "off_auto": False}
+    assert b["3"]["do"] == [{"do": "macro", "name": "a"}] and "retrigger" not in cfg["macros"]["a"]
 
 
 def test_vial_macro_roundtrip():

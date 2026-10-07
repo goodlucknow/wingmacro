@@ -38,10 +38,20 @@ A key has **one** trigger: `press` or `hold` (both **fire on release**), or `mom
 
 | `"momentary"` | Runs on key down and stays active while held (talkback). On release the macro is stopped, every parameter it wrote is restored to its value from before the press, and soft mutes fade back the other way. A `toggle` uses its A side. |
 
-Each key has one of two kinds of action, set by `do`:
-- `"do": <macro>` fires the same macro every time.
-- `"do": {"toggle": [<macro A>, <macro B>]}` alternates between A and B. The app keeps the A/B state and the LED shows it.
-  Actions that already toggle (e.g. `mute op: toggle`) don't need this.
+**Behaviour** (decided 2026-10-07; replaces the old Actions / Macro / Toggle A/B modes):
+- **Single**: `do` is the list of actions run on each fire.
+- **Toggle** (`"toggle": true`): the key keeps its own on/off state, deliberately **not** read from the console,
+  so "this key is on" is always definite. The first press runs `do` (On), the next runs Off, and so on.
+  - With `"off_auto": true` (the default), Off is generated as the On list reversed: mutes and mute groups flipped,
+    soft mutes faded back, `led` colours returned to the key colour. Actions without an inverse (wait, tap, set,
+    FX, levels, macros) are skipped.
+  - With `"off_auto": false`, Off is `"off": [...]`, written by hand.
+- Momentary keys are always Single: their release restores everything.
+- Actions **set** a state (`op: on|off`, soft mute `down|up`); they never flip it. `op: toggle` is still accepted for
+  old configs.
+- Shared **macros** (Macros page) are reusable action lists. A list runs one with `{"do": "macro", "name": "..."}`
+  (inline, nesting allowed up to 8 deep).
+- Configs from before this change (`"version": 1`) are converted on load, and the old file is kept as `.json.bak`.
 
 LED feedback for `hold`:
 - While held: the key fills from the background colour to the target colour.
@@ -76,9 +86,10 @@ Every fader-type target follows the same floor rules.
 
 | Action | Params | Kind | Notes |
 |---|---|---|---|
-| `mute` | `target`, `op: toggle\|on\|off` | button | |
+| `mute` | `target`, `op: on\|off` | button | |
 | `softmute` | `target`, `op: toggle\|down\|up`, `time` (s) | button | An app feature; the WING has no soft mute. **Down**: perceptual fade to −90 dB, then mute. **Up**: unmute, start at −89.5 dB, perceptual fade to **0 dB**. No stored return level. Never finishes early. A new fade on the same target takes over from the current level. |
-| `mgrp` | `n` 1–8, `op` | button | |
+| `mgrp` | `n` 1–8, `op: on\|off` | button | |
+| `macro` | `name` | button | Runs a shared macro's actions inline. |
 | `level` | `target`, `step` (dB, default 0.1) | rotary | Stepping up from −∞ jumps to −89.53 dB. Stepping down past −90 dB snaps to −∞. Reads the value back. |
 | `gain` | `target` (`ch/N`), `step` (dB, default 0.5) | rotary | Input gain of the channel's source (`/ch/N/in/set/$g` → `/io/in/...`). The path needs checking on hardware. |
 | `level_set` | `target`, `db` (number or `"-inf"`) | button | |
