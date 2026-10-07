@@ -26,6 +26,11 @@ All MIDI on **channel 1**, velocity 127. Keys send note-on when pressed and note
 └───┴───┴───┴───┘
 ```
 
+These are only the **defaults**. Every key, knob push and knob direction can be remapped in Vial
+(vial.rocks in Chrome, or the Vial desktop app) — ordinary keys and MIDI notes can be mixed
+freely. The app therefore keys its config **by MIDI note, not by key position**; a key remapped
+to an ordinary keycode is simply invisible to the app.
+
 ## LEDs
 
 16 per-key LEDs, VialRGB direct mode. LED index = key index (row × 4 + col).
