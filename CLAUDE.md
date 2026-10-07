@@ -46,7 +46,10 @@ KB16 Rev2 (stock Vial firmware)
 ## Repo layout (proposed)
 
 ```
-app/                 Python package (WING client, fades, tap tempo, FX db, pad HID in/LED out, web UI)
+app/wingmacro/       Python package: wing.py (native client), pad.py (HID), engine.py (mappings/macros),
+                     actions.py (action library), leds.py, web.py + static/, config.py
+app/tests/           pytest (no hardware needed)
+pyproject.toml       `pip install -e .` then `python -m wingmacro` (see app/README.md)
 firmware/            Vial keymap for doio/kb16/rev2 (keymap.c, rules.mk, config.h, vial.json) + build/flash notes
 platform/windows/    scroll-accel.ahk + autostart notes
 platform/linux/      systemd unit, udev rules
@@ -70,8 +73,8 @@ CLAUDE.md
 ## WING quirks (carry forward)
 
 - **Use the native protocol on TCP 2222, not OSC (decided 2026-10-07).** OSC (UDP 2223) allows only **one** event subscription console-wide (last requester wins), and the iPad app plus Wing Edit run alongside the pad. Native TCP gives each client its own event stream (up to 24 clients) and needs a keepalive within 10 s. WING accepts OSC-style paths in place of native hashes. Discovery: send `WING?` (UDP) to port 2222; broadcast won't cross VLANs, so also support a manually entered console IP.
-- **Fader resolution**: −144..+10 dB in 1024 steps. Read values back rather than assuming a 0.1 dB step landed exactly.
-- **Fader floor**: −144 dB (OSC) and −90 dB are both −∞. The last usable value above −∞ is about **−89.53 dB**. Consequences:
+- **Fader resolution**: native writes are stored as sent (−10.03 reads back −10.03; verified 2026-10-07). Still read values back.
+- **Fader floor**: −144 dB and −90 dB are both −∞. **−89.5 dB** is the lowest usable value; −89.6 snaps to −∞ (verified 2026-10-07). Consequences:
   - Stepping *up* from −∞ must jump straight to ~−89.5 dB, or the fader never leaves the bottom.
   - Stepping *down* past −90 dB snaps to −∞.
   - Same logic applies to sends.
@@ -102,6 +105,9 @@ CLAUDE.md
   - Applies to all FX slots the user has selected.
   - Delay time is `/fx/X/time`. Detect delays by name: ST-DL, TAP-DL, TAPE-DL, DEL/REV.
   - **Exclude BBD-DL**. It uses `/dly` and doesn't suit tap tempo.
+- **Native protocol facts (verified on WING Rack fw 3.1.1, 2026-10-07)**: navigate by name tokens from root (`/ch/1/fdr` → `da c1"ch" c0"1" c2"fdr"`); a data request answers `d7 <hash> <value> de`, a missing node gives a bare `de`; every client receives change events for everything without subscribing (but not for its own writes); `0xdd` on a node returns typed definitions (name, type, unit, min/max, enum items) of all its children; the console refuses a reconnect for ~1 s. Details in `app/wingmacro/wing.py`.
+- **FX parameters come from the console** (`0xdd` definitions of `/fx/N`), so model/mode-dependent params are always current. This may make the PDF-transcribed FX database unnecessary (pending user OK).
+- Input gain: `/ch/N/in/set/$g` is read-only; write `/io/in/<grp>/<n>/g` from `/ch/N/in/conn/{grp,in}`.
 - Paths checked against the protocol doc (v3.1.0): `/{ch,aux,bus,main,mtx,dca}/N/fdr` and `/mute`, sends `/ch/N/send/B/lvl`, mute groups `/mgrp/1..8/mute`, FX `/fx/1..16/...`. The PDF is gitignored (free download from Behringer); see `docs/README.md`.
 
 ## Mapping model (decided 2026-10-07)
@@ -126,11 +132,10 @@ CLAUDE.md
 ## Open items / next priorities
 
 1. ~~Pad map~~ and ~~Vial keymap~~: done (2026-10-07). See `docs/pad-map.md` and `firmware/`.
-2. Design the macro/mapping data model (config schema) and the action library.
-3. App skeleton: native TCP client + discovery/manual IP, pad HID (events in, LEDs out), web config UI, config file.
-4. Port the WING logic above (fader floor, soft mutes, mute groups, tap tempo).
-5. FX database from the protocol PDF + type-based stepping + logf scaling.
-6. Encoder acceleration in the app (fine at slow speeds, faster sweeps when spun).
+2. ~~Config model~~ (`docs/config-model.md`) and ~~app skeleton~~: done 2026-10-07, tested on the WING + pad (mute, level/floor, accel, push-turn, hold/cancel, soft-mute fades, LEDs).
+3. Real web config UI (forms per action, FX param picker from `/api/fx/N`); currently a JSON editor.
+4. Test on hardware with real presses: LED feel (hold progress, armed flash), acceleration curves, tap tempo on a delay slot, gain.
+5. Decide whether the PDF FX database is still needed (console definitions cover types/ranges).
 7. Rewrite `platform/windows/scroll-accel.ahk`. The original was lost. Consider scoping it to the Wing Edit window (`#HotIf WinActive(...)`) so other mice aren't affected.
 8. Packaging/autostart for each host: Windows startup task, macOS launchd, Linux systemd.
 9. Test on real hardware, against the WING at home.

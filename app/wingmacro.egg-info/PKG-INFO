@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: wingmacro
+Version: 0.1.0
+Summary: Control a Behringer WING from a DOIO KB16 macro pad
+Requires-Python: >=3.10
+Requires-Dist: aiohttp>=3.9
+Requires-Dist: hidapi>=0.14
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
