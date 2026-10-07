@@ -19,6 +19,7 @@ class Leds:
         self.cfg, self.pad, self.wing, self.ctx = cfg_ref, pad, wing, ctx
         self.engine = None
         self.fx = {}  # idx -> (kind, t0, dur, colour)
+        self.last = [OFF] * N_LEDS  # latest frame, for the web UI preview
 
     # --- transients (called by the engine) --------------------------------
 
@@ -165,10 +166,11 @@ class Leds:
         loop = asyncio.get_running_loop()
         while True:
             await asyncio.sleep(1 / 30)
-            if not self.pad.connected or not self.engine:
+            if not self.engine:
                 continue
             try:
-                hsv = self.frame(time.monotonic())
-                await loop.run_in_executor(None, self.pad.set_leds, hsv)
+                hsv = self.last = self.frame(time.monotonic())
+                if self.pad.connected:
+                    await loop.run_in_executor(None, self.pad.set_leds, hsv)
             except Exception as e:
                 log.debug("led frame: %s", e)

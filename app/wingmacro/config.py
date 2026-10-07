@@ -12,9 +12,10 @@ DEFAULT = {
     "layers": {"0": {"buttons": {}, "encoders": {}}},
 }
 
-PALETTE = {
-    "red": (0, 255, 200), "green": (85, 255, 200), "amber": (24, 255, 200),
-    "blue": (170, 255, 200), "white": (0, 0, 200), "off": (0, 0, 0),
+PALETTE = {  # keep in sync with static/app.js
+    "red": (0, 255, 200), "orange": (16, 255, 200), "amber": (24, 255, 200), "yellow": (43, 255, 200),
+    "green": (85, 255, 200), "cyan": (128, 255, 200), "blue": (170, 255, 200), "purple": (191, 255, 200),
+    "magenta": (213, 255, 200), "white": (0, 0, 200), "off": (0, 0, 0),
 }
 
 
@@ -69,8 +70,6 @@ def validate(cfg):
         for i, st in enumerate(steps):
             if st.get("do") not in ACTIONS:
                 raise ValueError(f"{where} step {i + 1}: unknown action {st.get('do')!r}")
-            if st["do"] == "tap" and not st.get("slots"):
-                raise ValueError(f"{where} step {i + 1}: tap needs 'slots', e.g. [3]")
 
     if not isinstance(cfg, dict) or not isinstance(cfg.get("layers"), dict):
         raise ValueError("config needs a 'layers' object")

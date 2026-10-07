@@ -312,6 +312,12 @@ class Wing:
         for p in list(self.watched):
             await self.get(p)
 
+    def set_host(self, host):
+        """Switch console (None = discover). Drops the current connection; run() reconnects."""
+        self.host, self.info = host or None, {}
+        if self._writer:
+            self._writer.close()
+
     async def wait_connected(self):
         await self._conn_event.wait()
 

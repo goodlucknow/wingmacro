@@ -13,6 +13,8 @@ from .wing import Wing
 
 log = logging.getLogger("wingmacro")
 
+STRIPS = [("ch", 40), ("aux", 8), ("bus", 16), ("main", 4), ("mtx", 8), ("dca", 16), ("mgrp", 8)]
+
 
 class App:
     def __init__(self, cfg_path, wing_ip=None, use_pad=True):
@@ -31,6 +33,9 @@ class App:
 
     async def _on_wing_connect(self):
         await a_refresh(self.ctx, {})
+        names = [f"/{k}/{n}/{f}" for k, cnt in STRIPS for n in range(1, cnt + 1) for f in ("name", "col")
+                 if not (k == "mgrp" and f == "col")]
+        await self.wing.watch(names)
         if self.leds:
             await self.wing.watch(self.leds.paths())
 
@@ -39,6 +44,25 @@ class App:
             slot = int(path.split("/")[2])
             self.ctx.fx_models[slot] = value
             self.ctx.invalidate_fx(slot)
+
+    def strips(self):
+        """Names/colours of every fader-type strip and mute group, from the WING value cache."""
+        c = self.wing.cached
+        return {k: [{"n": n, "name": c(f"/{k}/{n}/name") or "", "col": c(f"/{k}/{n}/col")}
+                    for n in range(1, cnt + 1)] for k, cnt in STRIPS}
+
+    def pad_keys(self):
+        """Per layer, the WM id at each of the 16 key positions (None = not a WM key)."""
+        p = self.pad
+        if not p or not p.keymap:
+            return {"known": False, "layers": [[i + 1 for i in range(16)] for _ in range(4)]}
+        return {"known": True, "layers": [[p.key_wm(l, i) for i in range(16)] for l in range(len(p.keymap))]}
+
+    async def set_console(self, ip):
+        cfg = dict(self.cfg, console=dict(self.cfg.get("console", {}), ip=ip or ""))
+        C.save(self.cfg_path, cfg)
+        self.cfg = cfg
+        self.wing.set_host(ip or None)
 
     async def apply_config(self, cfg):
         """Validate, save and switch to a new config (from the web UI)."""

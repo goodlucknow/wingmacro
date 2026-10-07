@@ -4,69 +4,31 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>wingmacro</title>
-<style>
-  :root { --bg: #f6f6f4; --fg: #1d1d1b; --muted: #6b6b66; --line: #d9d9d4; --ok: #2f8f4e; --bad: #c0392b; --card: #fff; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #18181a; --fg: #e8e8e4; --muted: #9a9a94; --line: #333336; --ok: #5cc27e; --bad: #ef6f5f; --card: #212124; }
-  }
-  body { background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, sans-serif; margin: 0; padding: 16px; }
-  main { max-width: 960px; margin: 0 auto; display: grid; gap: 16px; }
-  section { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; }
-  h1 { font-size: 18px; margin: 0; } h2 { font-size: 14px; margin: 0 0 8px; color: var(--muted); font-weight: 600; }
-  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--bad); }
-  .dot.on { background: var(--ok); }
-  textarea { width: 100%; box-sizing: border-box; min-height: 420px; font: 12px/1.4 ui-monospace, monospace;
-             background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
-  button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--fg); color: var(--bg); cursor: pointer; }
-  #msg { margin-left: 8px; } .err { color: var(--bad); } .okt { color: var(--ok); }
-  pre { margin: 0; font: 12px/1.4 ui-monospace, monospace; white-space: pre-wrap; color: var(--muted); }
-  .row { display: flex; flex-wrap: wrap; gap: 24px; }
-</style>
+<link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-<main>
-  <h1>wingmacro</h1>
-  <section>
-    <div class="row">
-      <div><span id="wdot" class="dot"></span>WING <span id="wing"></span></div>
-      <div><span id="pdot" class="dot"></span>Pad <span id="pad"></span></div>
-      <div>FX <span id="fx"></span></div>
-    </div>
-  </section>
-  <section>
-    <h2>Recent pad events</h2>
-    <pre id="events"></pre>
-  </section>
-  <section>
-    <h2>Config (JSON — see docs/config-model.md)</h2>
-    <textarea id="cfg" spellcheck="false"></textarea>
-    <p><button id="save">Save</button><span id="msg"></span></p>
-  </section>
-</main>
-<script>
-const $ = id => document.getElementById(id);
-async function status() {
-  try {
-    const s = await (await fetch('/api/status')).json();
-    $('wdot').className = 'dot' + (s.wing.connected ? ' on' : '');
-    $('wing').textContent = s.wing.connected ? `${s.wing.info.name || ''} ${s.wing.host}` : (s.wing.host ? `connecting to ${s.wing.host}` : 'searching');
-    $('pdot').className = 'dot' + (s.pad.connected ? ' on' : '');
-    $('pad').textContent = s.pad.connected ? `layer ${s.pad.layer + 1}` : 'not found';
-    $('fx').textContent = Object.entries(s.fx).map(([k, v]) => `${k}:${v}`).join('  ') || '—';
-    $('events').textContent = s.events.slice().reverse().map(e =>
-      `L${e.layer + 1} WM${String(e.wm).padStart(2, '0')} ${e.pressed ? 'down' : 'up'}  (row ${e.row}, col ${e.col})`).join('\n') || '—';
-  } catch (e) { $('wdot').className = 'dot'; }
-}
-async function load() { $('cfg').value = JSON.stringify(await (await fetch('/api/config')).json(), null, 2); }
-$('save').onclick = async () => {
-  let body;
-  try { body = JSON.stringify(JSON.parse($('cfg').value)); }
-  catch (e) { $('msg').className = 'err'; $('msg').textContent = 'Invalid JSON: ' + e.message; return; }
-  const r = await (await fetch('/api/config', { method: 'PUT', body })).json();
-  $('msg').className = r.ok ? 'okt' : 'err';
-  $('msg').textContent = r.ok ? 'Saved' : r.error;
-};
-load(); status(); setInterval(status, 1000);
-</script>
+<header id="top">
+  <div class="brand">wing<b>macro</b></div>
+  <div id="selbar" class="selbar"><span class="selnum">—</span><span class="selname">No control selected</span></div>
+  <div class="topstat">
+    <span id="save-state" class="savestate"></span>
+    <span class="chip"><i id="wing-dot" class="dot"></i><span id="wing-label">WING</span></span>
+    <span class="chip"><i id="pad-dot" class="dot"></i>PAD</span>
+    <span class="layerbox" title="Pad layer"><small>LAYER</small><span id="pad-layer">–</span></span>
+  </div>
+</header>
+<nav id="nav">
+  <button data-page="pad" class="on">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>PAD</button>
+  <button data-page="macros">
+    <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h13"/><path d="M18 14l3 3-3 3"/></svg>MACROS</button>
+  <button data-page="console">
+    <svg viewBox="0 0 24 24"><path d="M3 18h18M6 18V6M10 18v-8M14 18V9M18 18v-5"/><circle cx="6" cy="9" r="1.6"/><circle cx="10" cy="13" r="1.6"/><circle cx="14" cy="11" r="1.6"/><circle cx="18" cy="15" r="1.6"/></svg>CONSOLE</button>
+  <button data-page="settings">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>SETUP</button>
+</nav>
+<main id="page"></main>
+<div id="modal" class="modal" hidden></div>
+<script src="/static/app.js"></script>
 </body>
 </html>

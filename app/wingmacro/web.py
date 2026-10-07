@@ -1,25 +1,31 @@
-"""Minimal local web UI: status, recent pad events, and a JSON config editor."""
+"""Local web UI: static single-page app + JSON API + a websocket for live state."""
+import asyncio
 import json
 from pathlib import Path
 
-from aiohttp import web
+from aiohttp import WSMsgType, web
+
+from .wing import discover
 
 STATIC = Path(__file__).parent / "static"
 
 
+def _status(app):
+    w, p = app.wing, app.pad
+    return {
+        "wing": {"connected": w.connected, "host": w.host, "info": w.info},
+        "pad": {"connected": bool(p and p.connected), "layer": app.engine.layer},
+        "fx": {k: v for k, v in app.ctx.fx_models.items() if v and v != "NONE"},
+        "tap_ms": {",".join(map(str, k)): v["ms"] for k, v in app.ctx.taps.items()},
+    }
+
+
 async def start_web(app, host, port):
     async def index(_):
-        return web.FileResponse(STATIC / "index.html")
+        return web.FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
 
     async def status(_):
-        w, p = app.wing, app.pad
-        return web.json_response({
-            "wing": {"connected": w.connected, "host": w.host, "info": w.info},
-            "pad": {"connected": bool(p and p.connected), "layer": app.engine.layer},
-            "fx": {k: v for k, v in app.ctx.fx_models.items() if v and v != "NONE"},
-            "events": app.engine.log[-20:],
-            "tap_ms": {",".join(map(str, k)): v["ms"] for k, v in app.ctx.taps.items()},
-        })
+        return web.json_response(_status(app))
 
     async def get_config(_):
         return web.json_response(app.cfg)
@@ -32,6 +38,15 @@ async def start_web(app, host, port):
             return web.json_response({"ok": False, "error": str(e)}, status=400)
         return web.json_response({"ok": True})
 
+    async def strips(_):
+        return web.json_response(app.strips())
+
+    async def pad_keys(_):
+        return web.json_response(app.pad_keys())
+
+    async def fx_list(_):
+        return web.json_response({str(k): v for k, v in app.ctx.fx_models.items()})
+
     async def fx_params(req):
         slot = int(req.match_info["slot"])
         defs = await app.wing.defs(f"/fx/{slot}")
@@ -40,11 +55,51 @@ async def start_web(app, host, port):
              "min": d.min, "max": d.max, "items": d.items, "readonly": d.readonly}
             for d in defs if d.type != 0])
 
+    async def scan(_):
+        found = await asyncio.get_running_loop().run_in_executor(None, discover)
+        return web.json_response(found)
+
+    async def set_console(req):
+        body = await req.json()
+        await app.set_console((body.get("ip") or "").strip())
+        return web.json_response({"ok": True})
+
+    async def ws(req):
+        """Pushes status, LED preview and new pad events about 10x a second."""
+        sock = web.WebSocketResponse(heartbeat=20)
+        await sock.prepare(req)
+        last, last_t = None, 0.0
+
+        async def reader():
+            async for msg in sock:
+                if msg.type in (WSMsgType.CLOSE, WSMsgType.ERROR):
+                    break
+        rt = asyncio.create_task(reader())
+        try:
+            while not sock.closed and not rt.done():
+                st = _status(app)
+                st["leds"] = app.leds.last if app.leds else None
+                events = [e for e in app.engine.log if e["t"] > last_t]
+                if events:
+                    last_t = events[-1]["t"]
+                if st != last or events:
+                    await sock.send_json(dict(st, events=events))
+                    last = st
+                await asyncio.sleep(0.1)
+        except (ConnectionResetError, RuntimeError):
+            pass
+        finally:
+            rt.cancel()
+        return sock
+
     wa = web.Application()
     wa.add_routes([
-        web.get("/", index), web.get("/api/status", status),
+        web.get("/", index), web.static("/static", STATIC),
+        web.get("/api/status", status), web.get("/api/ws", ws),
         web.get("/api/config", get_config), web.put("/api/config", put_config),
-        web.get("/api/fx/{slot}", fx_params),
+        web.get("/api/strips", strips), web.get("/api/pad", pad_keys),
+        web.get("/api/fx", fx_list), web.get("/api/fx/{slot}", fx_params),
+        web.get("/api/scan", scan), web.post("/api/console", set_console),
     ])
     runner = web.AppRunner(wa, access_log=None)
     await runner.setup()
