@@ -34,7 +34,7 @@ A key has **one** trigger, `press` or `hold`. Both **fire on release**.
 | Trigger | Behaviour |
 |---|---|
 | `"press"` | Fires on release. |
-| `"hold"`, `hold_ms` (default 800) | Must be held for `hold_ms`; releasing earlier does nothing. Once the hold time is reached, the release **arms** the key. Then any press of the same key within `cancel_ms` (default 400) **cancels** it, so a tap or double tap works. If nothing is pressed in that time, it fires. The firing is delayed by `cancel_ms`, which is accepted. |
+| `"hold"`, `hold_ms` (default 800) | Must be held for `hold_ms`; releasing earlier does nothing. Once the hold time is reached, the release **arms** the key. Then any press of the same key within `cancel_ms` (global `pad.cancel_ms`, default 400, settable in the web UI; can be overridden per key) **cancels** it, so a tap or double tap works. If nothing is pressed in that time, it fires. The firing is delayed by `cancel_ms`, which is accepted. |
 
 Each key has one of two kinds of action, set by `do`:
 - `"do": <macro>` fires the same macro every time.
@@ -104,7 +104,7 @@ At slow speeds each tick is exactly one step. Faster turning multiplies the *num
 {
   "version": 1,
   "console": { "ip": "192.168.1.62", "discover": true },
-  "pad": { "background": [22, 255, 47] },
+  "pad": { "background": [22, 255, 47], "cancel_ms": 400 },
   "tap_tempo": { "slots": { "3": 1, "4": 0.5 } },
   "macros": {
     "band_out": {
@@ -148,4 +148,4 @@ Layer 1 here overrides only WM01. Everything else falls back to layer 0.
 
 ## Open questions
 
-1. Should the `hold` cancel window default to 400 ms? A shorter window fires sooner but is harder to hit.
+None. Defaults are to be tuned in practice.
