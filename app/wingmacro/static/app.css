@@ -122,10 +122,9 @@ label.f { display: flex; flex-direction: column; gap: 3px; font-size: 12px; colo
 .switch.on .sk i { background: var(--amber); }
 .padwrap { padding: 18px 16px; display: flex; flex-direction: column; gap: 16px; align-items: center; }
 /* DOIO KB16, flat: amber case (UI accent), 4x4 caps in a dark well, two small knobs, big knob */
-.doio { position: relative; width: 100%; max-width: 600px; aspect-ratio: 1.5; background: var(--amber);
-  border-radius: 14px 14px 16% 14px / 14px 14px 24% 14px; box-shadow: 0 10px 28px #000a;
-  display: grid; grid-template-columns: 58.5% 1fr; gap: 5%; padding: 6.5% 7% 9.5% 6.3%; }
-.well { background: #0c0c0d; border-radius: 3px; padding: 2px; align-self: start; }
+.doio { position: relative; width: 100%; max-width: 620px; aspect-ratio: 1102 / 748; background: var(--amber);
+  border-radius: 2.3% 3.6% 16.8% 2.3% / 3.4% 5.3% 26.7% 3.4%; box-shadow: 0 10px 28px #000a; }
+.well { position: absolute; left: 8.5%; top: 9.8%; width: 54.1%; background: #0c0c0d; border-radius: 3px; padding: 2px; }
 .keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; }
 .key { --led: transparent; position: relative; aspect-ratio: 1; border: 0; border-radius: 3px; cursor: pointer; display: flex; flex-direction: column;
   padding: 11% 11% 10%; overflow: hidden; text-align: left; color: var(--text); background: #1b1b1d;
@@ -144,21 +143,19 @@ label.f { display: flex; flex-direction: column; gap: 3px; font-size: 12px; colo
 .key .badge { position: absolute; right: 9%; top: 10%; font-size: 10px; color: var(--amber); font-weight: 700; }
 .key.nowm { cursor: default; opacity: .45; }
 .key.empty .nm { color: var(--faint); }
-.side { display: grid; grid-template-rows: auto 1fr; gap: 10%; min-width: 0; }
-.smallknobs { display: grid; grid-template-columns: 1fr 1fr; gap: 6%; }
-.knob { cursor: pointer; background: none; border: 0; padding: 0; color: var(--amber-ink); display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 0; }
-.dial { width: 74%; aspect-ratio: 1; border-radius: 50%; position: relative; background: #141415; box-shadow: 0 0 0 4px #00000022; }
+.knob { position: absolute; top: 13.1%; width: 15%; cursor: pointer; background: none; border: 0; padding: 0; color: var(--amber-ink); display: flex; flex-direction: column; align-items: center; gap: 9px; min-width: 0; }
+.knob[data-knob=left] { left: 65.1%; } .knob[data-knob=right] { left: 80.5%; }
+.dial { width: 78.7%; aspect-ratio: 1; border-radius: 50%; position: relative; background: #141415; box-shadow: 0 0 0 4px #00000022; }
 .dial svg { position: absolute; inset: -16%; width: 132%; height: 132%; stroke: var(--amber-ink); stroke-width: 4; opacity: 0; }
 .knob.mapped .dial svg { opacity: .85; }
 .knob.inherit .dial svg { opacity: .3; }
 .knob.sel .dial { box-shadow: 0 0 0 3px #fff; }
 .knob.flash .dial { box-shadow: 0 0 0 4px #fff, 0 0 14px 4px #fff; }
 .knob .kl { font-size: 11px; font-weight: 700; text-transform: uppercase; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; }
-.bigknob { position: relative; width: 80%; aspect-ratio: 1; margin: 0 auto; align-self: center; border-radius: 50%; background: #141415;
+.bigknob { position: absolute; left: 70.35%; top: 53.6%; width: 23.1%; aspect-ratio: 1; border-radius: 50%; background: #141415;
   box-shadow: 0 0 0 5px #00000022; display: grid; place-items: center; }
 .bigknob i { position: absolute; top: 12%; right: 22%; width: 3px; height: 8px; background: #ddd; border-radius: 2px; transform: rotate(35deg); }
 .bigknob span { font-size: 10px; color: var(--faint); letter-spacing: .1em; }
-.doiomark { position: absolute; left: 6.3%; width: 58.5%; bottom: 2.6%; text-align: center; font: 800 15px/1 "Arial Black", "Barlow Condensed", sans-serif; color: #00000038; letter-spacing: .02em; }
 .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--dim); text-transform: uppercase; }
 .legend i { display: inline-block; width: 18px; height: 12px; border: 1px solid #55555b; border-radius: 2px; vertical-align: -2px; margin-right: 4px; }
 .legend i.d { border-style: dashed; }
@@ -235,7 +232,7 @@ textarea.raw { width: 100%; min-height: 360px; background: #050505; color: var(-
   .banks .btn { flex: 1; padding: 8px 4px; font-size: 14px; }
   .banks .follow { margin: 0; }
   .key .nm { font-size: 10px; } .key .act, .key .wm, .key .badge { display: none; }
-  .knob .kl { font-size: 9px; } .doiomark { font-size: 10px; }
+  .knob .kl { font-size: 9px; }
   .key .cap { font-size: 9px; padding: 0 3px; }
   .switch { width: auto; flex-direction: column; align-items: flex-start; gap: 2px; font-size: 11px; }
   .picksplit { grid-template-columns: 1fr; }

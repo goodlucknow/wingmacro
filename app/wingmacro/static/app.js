@@ -232,12 +232,9 @@ function renderPad() {
       onclick: () => { S.sel = { kind: "knob", knob: k }; render(); } },
       dial(), h("span", { class: "kl" }, m ? (m.name || rotSummary(m.turn) || "Knob") : "—"));
   };
-  const padBody = h("div", { class: "doio" },
-    h("div", { class: "well" }, keys),
-    h("div", { class: "side" },
-      h("div", { class: "smallknobs" }, knob("left"), knob("right")),
-      h("div", { class: "bigknob", title: "Big knob: mouse wheel on every layer (not mapped here)" }, h("i"), h("span", {}, "SCROLL"))),
-    h("div", { class: "doiomark" }, "DOIO"));
+  const padBody = h("div", { class: "doio" },          // positions measured from a photo of the KB16
+    h("div", { class: "well" }, keys), knob("left"), knob("right"),
+    h("div", { class: "bigknob", title: "Big knob: mouse wheel on every layer (not mapped here)" }, h("i"), h("span", {}, "SCROLL")));
   const legend = h("div", { class: "legend" },
     h("span", {}, h("i"), "Mapped here"), h("span", {}, h("i", { class: "d" }), "Inherited from a lower layer"),
     h("span", {}, "Glow = live LED (pad on this layer)"),
