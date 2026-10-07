@@ -22,7 +22,7 @@ firmware/build.sh          # build only
 firmware/build.sh flash    # build, wait for bootloader, flash with dfu-util
 ```
 
-Bootloader is stm32duino (USB `1eaf:0003`). Enter it with the reset button on the
+Bootloader is stm32duino (USB `1eaf:0003`). It ignores dfu-util's detach, so `build.sh flash` ends with a USB reset to start the new firmware. Enter it with the reset button on the
 back, by holding the top-left key while plugging in (this also clears EEPROM), or a
 `QK_BOOT` key.
 

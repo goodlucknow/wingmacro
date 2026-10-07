@@ -61,8 +61,9 @@ class Pad:
             while True:
                 try:
                     await self._loop.run_in_executor(None, self._open)
-                except PadError as e:
+                except Exception as e:  # anything during a replug/reflash: retry, never give up
                     log.debug("pad: %s", e)
+                    self._drop()
                     await asyncio.sleep(2)
                     continue
                 self._emit({"type": "connected"})
@@ -70,7 +71,7 @@ class Pad:
                     while self.connected:
                         await self._loop.run_in_executor(None, self._hello)
                         await asyncio.sleep(1)
-                except (OSError, ValueError, PadError) as e:
+                except Exception as e:
                     log.warning("pad lost: %s", e)
                 self._drop()
                 self._emit({"type": "disconnected"})
