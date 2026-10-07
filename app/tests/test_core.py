@@ -102,3 +102,24 @@ def test_tap_moving_average():
     assert written[:4] == [("/fx/3/time", 500.0)] * 4
     assert written[4] == ("/fx/3/time", 525.0)  # window of 4 intervals: (500*3+600)/4
     assert len(written) == 5
+
+
+def test_momentary_restores_on_release():
+    from wingmacro.actions import Context
+
+    class FakeWing:
+        def __init__(self): self.v = {"/ch/40/mute": 1, "/mgrp/2/mute": 0}
+        def cached(self, p, d=None): return self.v.get(p, d)
+        async def value(self, p): return self.v.get(p)
+        async def set(self, p, val): self.v[p] = val
+    w = FakeWing()
+    cfg = {"pad": {}, "macros": {}, "layers": {"0": {"buttons": {"1": {"trigger": "momentary", "do": [
+        {"do": "mute", "target": "ch/40", "op": "off"}, {"do": "mgrp", "n": 2, "op": "on"}]}}}}}
+    eng = Engine(lambda: cfg, Context(w, lambda: cfg))
+
+    async def go():
+        eng.press(1, 0); await asyncio.sleep(0.02)
+        assert w.v == {"/ch/40/mute": 0, "/mgrp/2/mute": 1}   # active on key down
+        eng.release(1, 0); await asyncio.sleep(0.02)
+        assert w.v == {"/ch/40/mute": 1, "/mgrp/2/mute": 0}   # put back on release
+    asyncio.run(go())

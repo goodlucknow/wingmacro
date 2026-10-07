@@ -81,8 +81,8 @@ def validate(cfg):
         for wm, b in layer.get("buttons", {}).items():
             if not wm.isdigit() or not 1 <= int(wm) <= 32:
                 raise ValueError(f"layer {ln} button {wm!r}: WM id must be 1-32")
-            if b.get("trigger", "press") not in ("press", "hold"):
-                raise ValueError(f"layer {ln} WM{wm}: trigger must be press or hold")
+            if b.get("trigger", "press") not in ("press", "hold", "momentary"):
+                raise ValueError(f"layer {ln} WM{wm}: trigger must be press, hold or momentary")
             check_steps(steps_of(b.get("do", []), f"layer {ln} WM{wm}"), f"layer {ln} WM{wm}")
         for knob, e in layer.get("encoders", {}).items():
             if knob not in ("left", "right"):

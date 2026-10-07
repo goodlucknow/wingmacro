@@ -29,12 +29,14 @@ Firmware details are in `pad-map.md`. This file defines what the app does with t
 
 ## Trigger modes (buttons)
 
-A key has **one** trigger, `press` or `hold`. Both **fire on release**.
+A key has **one** trigger: `press` or `hold` (both **fire on release**), or `momentary` (acts on key **down**).
 
 | Trigger | Behaviour |
 |---|---|
 | `"press"` | Fires on release. |
 | `"hold"`, `hold_ms` (default 800) | Must be held for `hold_ms`; releasing earlier does nothing. Once the hold time is reached, the release **arms** the key. Then any press of the same key within `cancel_ms` (global `pad.cancel_ms`, default 400, settable in the web UI; can be overridden per key) **cancels** it, so a tap or double tap works. If nothing is pressed in that time, it fires. The firing is delayed by `cancel_ms`, which is accepted. |
+
+| `"momentary"` | Runs on key down and stays active while held (talkback). On release the macro is stopped, every parameter it wrote is restored to its value from before the press, and soft mutes fade back the other way. A `toggle` uses its A side. |
 
 Each key has one of two kinds of action, set by `do`:
 - `"do": <macro>` fires the same macro every time.

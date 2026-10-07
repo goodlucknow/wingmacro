@@ -119,7 +119,7 @@ CLAUDE.md
   - The app drives LEDs through VialRGB direct mode: the `0x07 0x41` command sets the mode, and `0x07 0x42` sets each LED's HSV. Tested on hardware 2026-10-07. In direct mode the app paints every LED, including the background colour, which is configurable and defaults to the case colour (HSV 22/255/47). The firmware caps brightness at 200.
   - Each key's LED has a background colour and state colours bound to WING state (e.g. green/red for a toggle), plus transient effects (flashing during a hold, pulsing on tap tempo).
   - The mode is set without saving to the pad's memory (`noeeprom`). On exit the app switches back to solid colour (VialRGB mode 2), and a power cycle also restores the solid colour.
-- **Trigger modes per mapping** (revised 2026-10-07, see `docs/config-model.md`): one per key, `press` or `hold`, both fire on release; a tap right after a hold's release cancels it. Originally: on press, on release, or **press-and-hold for N ms**, which acts as a safety on risky macros. While the key is held, its LED shows progress, then flashes to confirm. Releasing early cancels. The app times this from note-on and note-off.
+- **Trigger modes per mapping** (revised 2026-10-07, see `docs/config-model.md`): one per key: `press` or `hold` (fire on release; a tap right after a hold's release cancels it) or `momentary` (on key down, restored on release, for talkback; added 2026-10-07). Originally: on press, on release, or **press-and-hold for N ms**, which acts as a safety on risky macros. While the key is held, its LED shows progress, then flashes to confirm. Releasing early cancels. The app times this from note-on and note-off.
 
 ### Action / function library (from the previous app — rebuild these as macro actions)
 

@@ -1,5 +1,6 @@
 """Pad events -> mappings -> macros. See docs/config-model.md."""
 import asyncio
+import copy
 import logging
 import time
 
@@ -16,6 +17,22 @@ ACCEL = {
     "fine": [(0.03, 4), (0.06, 2)],
     "normal": [(0.02, 10), (0.04, 5), (0.08, 2)],
 }
+
+
+class Recorder:
+    """Wraps the WING client for a momentary press: remembers each path's value before its
+    first write, so the release can put everything back."""
+
+    def __init__(self, wing, record):
+        self._w, self._rec = wing, record
+
+    def __getattr__(self, name):
+        return getattr(self._w, name)
+
+    async def set(self, path, value):
+        if path not in self._rec:
+            self._rec[path] = await self._w.value(path)
+        return await self._w.set(path, value)
 
 
 class Engine:
@@ -80,6 +97,8 @@ class Engine:
             for st in self.buttons.values():
                 if st.get("timer"):
                     st["timer"].cancel()
+                if st["phase"] == "held":
+                    asyncio.create_task(self._momentary_end(st))
             self.buttons.clear()
 
     def _log(self, ev):
@@ -101,7 +120,9 @@ class Engine:
         pad = self.cfg().get("pad", {})
         st = {"phase": "pressed", "map": m, "layer": l, "wm": wm,
               "idx": m.get("led_index", idx), "t0": time.monotonic()}
-        if m.get("trigger", "press") == "hold":
+        if m.get("trigger", "press") == "momentary":
+            self._momentary_start(st)
+        elif m.get("trigger", "press") == "hold":
             st["phase"] = "holding"
             st["hold"] = m.get("hold_ms", pad.get("hold_ms", 800)) / 1000
             self._led(st, "progress", st["hold"])
@@ -114,6 +135,9 @@ class Engine:
         if st["phase"] == "pressed":
             del self.buttons[wm]
             self.fire(st)
+        elif st["phase"] == "held":
+            del self.buttons[wm]
+            asyncio.create_task(self._momentary_end(st))
         elif st["phase"] == "cancelling":
             del self.buttons[wm]
         elif st["phase"] == "holding":
@@ -137,6 +161,34 @@ class Engine:
         steps, mkey, retrig = self.resolve(st["map"].get("do", []), key, advance=True)
         self.run(steps, mkey or key, retrig, st["t0"])
 
+    def _momentary_start(self, st):
+        """Run on key down. Steps run against a Recorder so the release can restore."""
+        st["phase"] = "held"
+        st["record"] = {}
+        steps, _, _ = self.resolve(st["map"].get("do", []), None)  # a toggle uses its A side
+        st["steps"] = steps
+        ctx = copy.copy(self.ctx)
+        ctx.wing = Recorder(self.ctx.wing, st["record"])
+        st["task"] = asyncio.create_task(self._run(steps, ("momentary", st["layer"], st["wm"]), st["t0"], ctx))
+
+    async def _momentary_end(self, st):
+        """On release: stop the macro, fade soft mutes back, restore everything else."""
+        task = st["task"]
+        if not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        w = self.ctx.wing
+        for path, value in st["record"].items():
+            if value is not None:
+                await w.set(path, value)
+        for s in st["steps"]:
+            if s.get("do") == "softmute":
+                back = {"down": "up", "up": "down"}.get(s.get("op", "toggle"), "toggle")
+                await ACTIONS["softmute"](self.ctx, dict(s, op=back))
+
     def _led(self, st, kind, dur=None):
         if self.leds and st.get("idx") is not None:
             self.leds.transient(st["idx"], kind, dur, st["map"])
@@ -154,7 +206,7 @@ class Engine:
         if retrigger != "parallel":
             self.running[key] = task
 
-    async def _run(self, steps, key, t0=None):
+    async def _run(self, steps, key, t0=None, ctx=None):
         try:
             for st in steps:
                 fn = ACTIONS.get(st.get("do"))
@@ -162,10 +214,12 @@ class Engine:
                     log.warning("unknown action %r", st.get("do"))
                     continue
                 try:
+                    # soft mutes always use the real client: a momentary release fades them back
+                    c = self.ctx if ctx is None or st["do"] == "softmute" else ctx
                     if st["do"] in ROTARY:
-                        await fn(self.ctx, st, int(st.get("ticks", 1)))
+                        await fn(c, st, int(st.get("ticks", 1)))
                     else:
-                        await fn(self.ctx, dict(st, _t0=t0) if t0 else st)
+                        await fn(c, dict(st, _t0=t0) if t0 else st)
                 except asyncio.CancelledError:
                     raise
                 except Exception:

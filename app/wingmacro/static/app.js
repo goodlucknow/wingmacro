@@ -156,6 +156,7 @@ function summary(m) {                       // -> {cap, col, name, act}
   if (doV && doV.toggle) r.act = "A/B " + r.act;
   if (m.name) r.name = m.name;
   if (m.trigger === "hold") r.act = "Hold · " + r.act;
+  if (m.trigger === "momentary") r.act = "While held · " + r.act;
   return r;
 }
 function rotSummary(steps) {
@@ -283,13 +284,15 @@ function keyEditor(idx) {
       oninput: (e) => { m.name = e.target.value || undefined; commit(false); renderTop(); }, onchange: () => render() })),
     sect("Trigger",
       h("div", { class: "row" },
-        seg([["press", "Press"], ["hold", "Hold"]], m.trigger || "press", (v) => { m.trigger = v; commit(); }),
+        seg([["press", "Press"], ["hold", "Hold"], ["momentary", "Momentary"]], m.trigger || "press", (v) => {
+          m.trigger = v; if (v === "momentary" && m.do?.toggle) m.do = m.do.toggle[0]; commit(); }),
         m.trigger === "hold" && field("Hold time", h("span", {}, numInput(m.hold_ms, (v) => { m.hold_ms = v; }, { ph: pad.hold_ms ?? 800, step: 50, min: 100 }), h("span", { class: "unit" }, "ms"))),
         m.trigger === "hold" && field("Cancel window", h("span", {}, numInput(m.cancel_ms, (v) => { m.cancel_ms = v; }, { ph: pad.cancel_ms ?? 400, step: 50, min: 0 }), h("span", { class: "unit" }, "ms")))),
-      h("p", { class: "hint" }, m.trigger === "hold"
-        ? "Hold until the key lights fully, then release. It flashes while armed; tap it again within the cancel window to cancel."
-        : "Fires when the key is released.")),
-    sect("Action", doEditor(() => m.do, (v) => { m.do = v; }, wm)),
+      h("p", { class: "hint" }, {
+        hold: "Hold until the key lights fully, then release. It flashes while armed; tap it again within the cancel window to cancel.",
+        momentary: "Acts the moment the key goes down and stays active while held (e.g. talkback). On release, everything it changed is put back and soft mutes fade back.",
+      }[m.trigger] || "Fires when the key is released.")),
+    sect("Action", doEditor(() => m.do, (v) => { m.do = v; }, wm, m.trigger === "momentary")),
     sect("LED", ledEditor(m)));
   return [head(h("button", { class: "btn sm danger", onclick: () => { delete layerCfg(S.layer).buttons[wm]; commit(); } }, "Clear")), body];
 }
@@ -318,10 +321,11 @@ function knobEditor(knob) {
 }
 
 // ---------------------------------------------------------------------------- do / steps
-function doEditor(get, set, key) {
+function doEditor(get, set, key, noToggle) {
   const v = get();
   const mode = typeof v === "string" ? "macro" : v && v.toggle ? "toggle" : "steps";
-  const modeSeg = seg([["steps", "Actions"], ["macro", "Macro"], ["toggle", "Toggle A/B"]], mode, (nv) => {
+  const modes = [["steps", "Actions"], ["macro", "Macro"], ...(noToggle ? [] : [["toggle", "Toggle A/B"]])];
+  const modeSeg = seg(modes, mode, (nv) => {
     if (nv === mode) return;
     if (nv === "steps") set(typeof v === "string" ? clone(S.cfg.macros?.[v]?.steps || []) : []);
     if (nv === "macro") set(macroNames()[0] || newMacro());
@@ -721,7 +725,7 @@ function render() {
 function fromHash() {                       // #pad/2/5 = layer 2, key 5; #pad/1/left; #macros
   const [page, layer, ctl] = location.hash.slice(1).split("/");
   if (["pad", "macros", "console", "settings"].includes(page)) S.page = page;
-  if (layer) { S.layer = +layer - 1; S.follow = false; }
+  if (layer) S.layer = +layer - 1;          // Follow pad stays on; the live layer wins once known
   if (ctl) S.sel = /^\d+$/.test(ctl) ? { kind: "key", idx: +ctl - 1 } : { kind: "knob", knob: ctl };
 }
 function go(p) { S.page = p; if (p === "console" && S.consoles == null) scan(); render(); }
