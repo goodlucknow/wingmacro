@@ -789,13 +789,14 @@ function kmEditor() {
 // Keycode picker: tabs of keycodes, modifier combos, raw hex. Used inline and in a modal.
 function kcPicker(current, onPick, { used = new Set(), redraw = render } = {}) {
   const tab = S.kmTab;
+  if (["KEY MACROS", "TAP DANCE"].includes(tab) && !S.vial) loadVial();
   const group = KC.groups.find((g) => g[0] === tab) || KC.groups[0];
   const modable = (kc) => kc >= 0x04 && kc <= 0x73;
   const withMods = (kc) => (S.kmMods && modable(kc) ? (S.kmMods << 8) | kc : kc);
   const grid = h("div", { class: "kcgrid" }, group[1].map((kc) => {
     const v = withMods(kc);
     return h("button", { class: "kc" + (v === current ? " on" : "") + (KC.isWM(kc) ? " wmk" : "") + (KC.isWM(kc) && used.has(kc) ? " used" : ""),
-      title: KC.isWM(kc) && used.has(kc) ? "Already used on this layer" : "", onclick: () => onPick(v) }, KC.name(v));
+      title: KC.isWM(kc) && used.has(kc) ? "Already used on this layer" : kcDetail(kc), onclick: () => onPick(v) }, KC.name(v));
   }));
   const modsRow = ["LETTERS", "F-KEYS", "EDIT / NAV", "NUMPAD"].includes(tab) && h("div", { class: "row", style: "margin-bottom:8px;gap:6px;align-items:center" },
     h("span", { class: "muted", style: "font-size:12px;text-transform:uppercase" }, "With"),
@@ -806,10 +807,24 @@ function kcPicker(current, onPick, { used = new Set(), redraw = render } = {}) {
     h("div", { class: "tabs kmtabs" }, KC.groups.map(([g]) => h("button", { class: g === tab ? "on" : "", onclick: () => { S.kmTab = g; redraw(); } }, g))),
     h("div", { style: "padding-top:10px" }, modsRow, grid),
     tab === "WINGMACRO" && h("p", { class: "hint" }, "Amber dot = already used on this layer. WM keys do nothing on their own: map them on the Pad page."),
-    tab === "KEY MACROS" && h("p", { class: "hint" }, "Keystroke macros stored on the pad: edit them on the Key macros tab."),
-    tab === "TAP DANCE" && h("p", { class: "hint" }, "Tap-dance entries: edit them on the Tap dance tab."),
+    ["KEY MACROS", "TAP DANCE"].includes(tab) && h("div", { class: "row", style: "margin-top:10px;align-items:center" },
+      h("span", { class: "hint" }, tab === "KEY MACROS" ? "Pick one to assign it. Its keystrokes are set in the macro editor." : "Pick one to assign it. Its actions are set in the tap dance editor."),
+      h("button", { class: "btn sm light", onclick: () => {
+        const m = $("modal"); m.hidden = true; m.replaceChildren();
+        S.kmView = tab === "KEY MACROS" ? "macros" : "tapdance";
+        S.vialSel = current >= 0x7700 && current < 0x7720 ? current - 0x7700 : current >= 0x5700 && current < 0x5720 ? current - 0x5700 : 0;
+        render();
+      } }, tab === "KEY MACROS" ? "Open macro editor" : "Open tap dance editor")),
     h("div", { class: "row", style: "margin-top:12px;align-items:center" }, h("span", { class: "muted", style: "font-size:12px;text-transform:uppercase" }, "Any keycode"), hex,
       h("button", { class: "btn sm", onclick: () => { const v = parseInt(hex.value, 16); if (!isNaN(v)) onPick(v); } }, "Set")));
+}
+function kcDetail(kc) {                      // contents of a key macro / tap dance, for tooltips
+  if (kc >= 0x7700 && kc < 0x7720) return S.vial?.macros ? macroSummary(S.vial.macros[kc - 0x7700]) : "";
+  if (kc >= 0x5700 && kc < 0x5720) {
+    const t = S.vial?.tap_dance?.[kc - 0x5700];
+    return t ? ["tap", "hold", "double_tap", "tap_hold"].filter((k) => t[k]).map((k) => `${k.replace("_", " ")}: ${KC.name(t[k])}`).join(", ") || "empty" : "";
+  }
+  return "";
 }
 function pickKeycode(current, onPick) {
   const m = $("modal");
