@@ -238,7 +238,7 @@ textarea.raw { width: 100%; min-height: 360px; background: #050505; color: var(-
   .switch { width: auto; flex-direction: column; align-items: flex-start; gap: 2px; font-size: 11px; }
   .picksplit { grid-template-columns: 1fr; }
   .fxgrid { grid-template-columns: repeat(2, 1fr); }
-  .tabs button { min-width: 0; flex: 1; padding: 8px 6px; }
+  .tabs > button { min-width: 0; flex: 1; padding: 8px 6px; }
 }
 
 /* --- keymap page --------------------------------------------------------------------- */
