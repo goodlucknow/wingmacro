@@ -5,7 +5,7 @@
 
 #include QMK_KEYBOARD_H
 
-#include "lib/layer_status/layer_status.h"
+#include "oled_frames.h"
 
 /* With MIDI defaults (channel 1, octave 2 => MI_C = note 48):
  *   keys 0..15 (row*4+col)  -> notes 48..63
@@ -21,7 +21,7 @@
  *  │52 │53 │54 │55 │
  *  ├───┼───┼───┼───┤
  *  │56 │57 │58 │59 │      ┌───┐
- *  ├───┼───┼───┼───┤      │66 │
+ *  ├───┼───┼───┼───┤      │TO+│
  *  │60 │61 │62 │63 │      └───┘
  *  └───┴───┴───┴───┘
  */
@@ -30,33 +30,34 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [0] = LAYOUT(
                 MI_C,   MI_Cs,  MI_D,   MI_Ds,  MI_E1,
                 MI_E,   MI_F,   MI_Fs,  MI_G,   MI_F1,
-                MI_Gs,  MI_A,   MI_As,  MI_B,   MI_Fs1,
+                MI_Gs,  MI_A,   MI_As,  MI_B,   TO(1),
                 MI_C1,  MI_Cs1, MI_D1,  MI_Ds1
             ),
     [1] = LAYOUT(
                 _______, _______, _______, _______, _______,
                 _______, _______, _______, _______, _______,
-                _______, _______, _______, _______, _______,
+                _______, _______, _______, _______, TO(2),
                 _______, _______, _______, _______
             ),
     [2] = LAYOUT(
                 _______, _______, _______, _______, _______,
                 _______, _______, _______, _______, _______,
-                _______, _______, _______, _______, _______,
+                _______, _______, _______, _______, TO(3),
                 _______, _______, _______, _______
             ),
     [3] = LAYOUT(
                 _______, _______, _______, _______, _______,
                 _______, _______, _______, _______, _______,
-                _______, _______, _______, _______, _______,
+                _______, _______, _______, _______, TO(0),
                 _______, _______, _______, _______
             ),
 };
 
 #ifdef OLED_ENABLE
+    // "WING" wordmark + 2x2 layer dots (see firmware/tools/gen_oled.py).
     bool oled_task_user(void) {
-        render_layer_status();
-        return true;
+        oled_write_raw_P(oled_frames[get_highest_layer(layer_state) & 3], sizeof(oled_frames[0]));
+        return false;
     }
 #endif
 

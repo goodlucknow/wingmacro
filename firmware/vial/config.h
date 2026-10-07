@@ -10,13 +10,18 @@
 // Full MIDI keycode set so notes stay remappable in the Vial editor.
 #define MIDI_ADVANCED
 
-// Boot with LEDs off-ish (dim white) instead of the stock rainbow.
+// Boot with a solid colour matching the case instead of the stock rainbow.
 // The wingmacro app takes over via VialRGB direct mode.
 #undef RGB_MATRIX_DEFAULT_MODE
 #define RGB_MATRIX_DEFAULT_MODE RGB_MATRIX_SOLID_COLOR
 #undef RGB_MATRIX_DEFAULT_HUE
-#define RGB_MATRIX_DEFAULT_HUE 0
+#define RGB_MATRIX_DEFAULT_HUE 22
 #undef RGB_MATRIX_DEFAULT_SAT
-#define RGB_MATRIX_DEFAULT_SAT 0
+#define RGB_MATRIX_DEFAULT_SAT 255
 #undef RGB_MATRIX_DEFAULT_VAL
-#define RGB_MATRIX_DEFAULT_VAL 24
+#define RGB_MATRIX_DEFAULT_VAL 47
+
+// OLED: skip the DOIO boot logo; blank after 30 min without key/knob activity
+// (any press or turn wakes it).
+#define OLED_LOGO_TIMEOUT 0
+#define OLED_TIMEOUT 1800000

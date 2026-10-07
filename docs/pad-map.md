@@ -10,7 +10,7 @@ Verified on hardware 2026-10-07 (keys, knob pushes, knob directions; big knob se
 | Keys 0–15 (index = row × 4 + col, top-left = 0) | 48–63 |
 | Left small knob push | 64 |
 | Right small knob push | 65 |
-| Big knob push | 66 (app may ignore) |
+| Big knob push | Next layer: TO(1)/TO(2)/TO(3)/TO(0) on layers 0–3 (no MIDI) |
 | Left small knob CCW / CW | 67 / 68 (each tick sends a quick on/off) |
 | Right small knob CCW / CW | 69 / 70 |
 | Big knob turn | Mouse wheel down / up, every layer |
@@ -22,7 +22,7 @@ Verified on hardware 2026-10-07 (keys, knob pushes, knob directions; big knob se
 │52 │53 │54 │55 │
 ├───┼───┼───┼───┤
 │56 │57 │58 │59 │      ┌───┐
-├───┼───┼───┼───┤      │66 │
+├───┼───┼───┼───┤      │TO+│
 │60 │61 │62 │63 │      └───┘
 └───┴───┴───┴───┘
 ```
@@ -39,8 +39,12 @@ to an ordinary keycode is simply invisible to the app.
 ## Layers
 
 Firmware layer 0 holds everything; layers 1–3 are transparent (big knob stays wheel).
-Currently set in Vial: big knob push = TO(1)/TO(2)/TO(3)/TO(0) on layers 0–3 (so note 66 is
-not sent). Read the live keymap with `tools/vialhid.py dump`.
+Big knob push cycles layers (firmware default). The OLED shows a "WING" wordmark with 2×2
+dots; the filled dot is the active layer (TL=0, TR=1, BL=2, BR=3). Read the live keymap with
+`tools/vialhid.py dump`.
+
+**Reflashing resets Vial edits** (VIA's EEPROM magic is the build date). Bake anything worth
+keeping into `firmware/vial/` defaults, or save a `.vil` in Vial first.
 
 ## Open
 
