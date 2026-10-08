@@ -277,9 +277,9 @@ function summary(m) {                       // -> {cap, col, name, act}
     const t = targetLabel(st.target);           // safe when no target has been picked yet
     switch (st.do) {
       case "mute": r = { cap: t.cap, col: t.col, name: t.name, act: "Mute" }; break;
-      case "fade": r = { cap: t.cap, col: t.col, name: t.name, act: `Fade ${st.time ?? 5}s` }; break;
+      case "fade": r = { cap: t.cap, col: t.col, name: t.name, act: `Fade ${levelText(st)} ${st.time ?? 5}s` }; break;
       case "mgrp": r = { cap: `MGRP.${st.n}`, name: stripInfo("mgrp", st.n).name || `Mute grp ${st.n}`, act: "Mute group" }; break;
-      case "level_set": r = { cap: t.cap, col: t.col, name: t.name, act: `Set ${st.db === "-inf" ? "−∞" : (st.db ?? 0) + " dB"}` }; break;
+      case "level_set": r = { cap: t.cap, col: t.col, name: t.name, act: `Set ${levelText(st)}` }; break;
       case "tap": r = { cap: "FX." + (st.slots || []).join(","), name: "Tap", act: "Tap tempo" }; break;
       case "param": case "param_set": { const L = paramLabel(st.path, st.plabel); r = { cap: L.cap, col: L.col, name: L.name, act: L.param || ACT[st.do].label }; break; }
       default: r = { cap: "", name: ACT[st.do]?.label || st.do, act: "" };
@@ -591,24 +591,13 @@ function fieldFor(st, k, t, o) {
   switch (t) {
     case "target": case "targetch":
       return field(t === "targetch" ? "Channel" : "Target", targetBtn(st[k], (v) => { st[k] = v; commit(); }, t === "targetch"));
-    case "fadeto": {
-      const mode = st[k] === "back" ? "back" : st[k] === "-inf" ? "inf" : "db";
-      return field("To", h("span", { class: "row", style: "gap:6px;align-items:center" },
-        seg([["db", "dB"], ["inf", "−∞"], ["back", "Back"]], mode, (v) => { st[k] = v === "back" ? "back" : v === "inf" ? "-inf" : 0; commit(); }, "sm"),
-        mode === "db" && numInput(st[k] ?? 0, (v) => { st[k] = v ?? 0; }, { step: 0.5, min: -89.5, max: 10 }), mode === "db" && h("span", { class: "unit" }, "dB")));
-    }
+    case "fadeto": case "db": return field(t === "db" ? "Level" : "To", levelTo(st, k));
     case "wait": return field("Next action", seg([[true, "Waits for fade"], [false, "Runs at once"]], st[k] !== false, (v) => { st[k] = v; commit(); }, "sm"));
     case "op": return field("Set", seg([["on", "On"], ["off", "Off"], ...(st[k] === "toggle" || !st[k] ? [["toggle", "Flip (old)"]] : [])], st[k] || "toggle", (v) => { st[k] = v; commit(); }, "sm"));
     case "macro": return field("Macro", macroPick(st[k], (v) => { st[k] = v; }));
     case "num": return field(o.label || (k === "step" ? "Step" : k === "time" ? "Fade time" : k), h("span", {}, numInput(st[k], (v) => { st[k] = v; }, o), o.unit && h("span", { class: "unit" }, o.unit)));
     case "text": return field(k, h("input", { type: "text", value: st[k] ?? "", placeholder: o.ph,
       oninput: (e) => { const v = e.target.value; st[k] = k === "value" && v !== "" && !isNaN(+v) ? +v : v; commit(false); } }));
-    case "db": {
-      const inf = st[k] === "-inf";
-      return field("Level", h("span", { class: "row", style: "gap:6px;align-items:center" },
-        !inf && numInput(st[k] ?? 0, (v) => { st[k] = v ?? 0; }, { step: 0.1, min: -89.5, max: 10 }), !inf && h("span", { class: "unit" }, "dB"),
-        seg([[false, "dB"], [true, "−∞"]], inf, (v) => { st[k] = v ? "-inf" : 0; commit(); }, "sm")));
-    }
     case "mgrp": return field("Group", h("select", { onchange: (e) => { st[k] = +e.target.value; commit(); } },
       [1, 2, 3, 4, 5, 6, 7, 8].map((n) => h("option", { value: n, selected: st[k] === n }, `${n}${stripInfo("mgrp", n).name ? " · " + stripInfo("mgrp", n).name : ""}`))));
     case "fxslots": return field("FX slots", h("div", { class: "row", style: "gap:4px" }, [...Array(16).keys()].map((i) => {
@@ -645,6 +634,25 @@ function fieldFor(st, k, t, o) {
     }
   }
   return null;
+}
+function levelTo(st, k) {                 // a level, a change by ±dB (rel), −∞, or Back (level before the last set/fade)
+  const mode = st[k] === "back" ? "back" : st[k] === "-inf" ? "inf" : st.rel ? "rel" : "db";
+  const pick = (v) => {
+    if (v === mode) return;
+    delete st.rel;
+    st[k] = v === "back" ? "back" : v === "inf" ? "-inf" : v === "rel" ? 6 : 0;
+    if (v === "rel") st.rel = true;
+    commit();
+  };
+  return h("span", { class: "row", style: "gap:6px;align-items:center" },
+    seg([["db", "dB"], ["rel", "Change by"], ["inf", "−∞"], ["back", "Back"]], mode, pick, "sm"),
+    mode === "db" && [numInput(st[k] ?? 0, (v) => { st[k] = v ?? 0; }, { step: 0.5, min: -89.5, max: 10 }), h("span", { class: "unit" }, "dB")],
+    mode === "rel" && [numInput(st[k] ?? 0, (v) => { st[k] = v ?? 0; }, { step: 0.5, ph: "+6 / −6" }), h("span", { class: "unit" }, "dB")],
+    mode === "back" && h("span", { class: "hint" }, "to the level before the last Set level / Fade on it"));
+}
+function levelText(st) {
+  const v = st.db ?? 0;
+  return v === "back" ? "back" : v === "-inf" ? "−∞" : st.rel ? `${v >= 0 ? "+" : "−"}${Math.abs(v)} dB` : `${v} dB`;
 }
 function valueInput(st, p) {
   if (!p) return h("input", { type: "text", disabled: true, placeholder: "choose parameter" });

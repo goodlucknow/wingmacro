@@ -142,29 +142,48 @@ async def a_mgrp(ctx, p, ticks=None):
     await _toggle_bool(ctx, f"/mgrp/{int(p['n'])}/mute", p.get("op", "toggle"))
 
 
+def _level_target(ctx, target, cur, p):
+    """Where a level_set / fade goes: `db` = a level, "-inf", "back" (the level before the last
+    set or fade on this target), or with `rel` a change by `db` dB (-inf stays -inf; at most +10 dB,
+    below -89.5 dB is -inf). Every target but "back" remembers `cur` for a later "back"."""
+    to = p.get("db", 0)
+    if to == "back":
+        return ctx.fade_back.get(target, cur)
+    ctx.fade_back[target] = cur
+    if to == "-inf":
+        return NEG_INF
+    if p.get("rel"):
+        if cur <= FADE_END:
+            return cur
+        to = min(cur + float(to), MAX_DB)
+    to = float(to)
+    return NEG_INF if to < FLOOR - 0.001 else to
+
+
 async def a_level_set(ctx, p, ticks=None):
-    db = p.get("db", 0)
-    db = NEG_INF if db == "-inf" else float(db)
-    if db < FLOOR - 0.001:
-        db = NEG_INF
-    await ctx.wing.set(level_path(p["target"]), db)
+    target = p["target"]
+    path = level_path(target)
+    cur = await ctx.wing.value(path)
+    if cur is None:
+        return
+    old = ctx.fades.pop(target, None)
+    if old and not old.done():
+        old.cancel()  # a set takes over from a running fade
+    db = _level_target(ctx, target, cur, p)
+    if db != cur:
+        await ctx.wing.set(path, db)
 
 
 async def a_fade(ctx, p, ticks=None):
-    """Move a fader or send to `db` (number, "-inf", or "back" = the level before the last fade on
-    this target) over `time` seconds. Perceptual curve; up from -inf starts at -89.5 dB at once;
+    """Move a fader or send to `db` (see _level_target: a level, "-inf", "back", or relative with `rel`)
+    over `time` seconds. Perceptual curve; up from -inf starts at -89.5 dB at once;
     never finishes early. With `wait` (default) the next action waits until the fade is done."""
     target = p["target"]
     path = level_path(target)
     cur = await ctx.wing.value(path)
     if cur is None:
         return
-    to = p.get("db", 0)
-    if to == "back":
-        to = ctx.fade_back.get(target, 0.0)
-    else:
-        ctx.fade_back[target] = cur
-        to = NEG_INF if to == "-inf" else float(to)
+    to = _level_target(ctx, target, cur, p)
     old = ctx.fades.pop(target, None)
     if old and not old.done():
         old.cancel()  # a new fade on the same target takes over from the current level

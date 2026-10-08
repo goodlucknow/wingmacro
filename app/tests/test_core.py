@@ -495,3 +495,23 @@ def test_tap_warns_on_slots_without_a_time_in_ms():
             await a_tap(ctx, {"slots": [8], "_t0": 100 + t})
     asyncio.run(go2())
     assert shown == [] and w.v["/fx/8/time"] == 500.0
+
+
+def test_relative_level_and_back():
+    from wingmacro.actions import Context, a_level_set
+    class FW:
+        def __init__(self): self.v = {"/ch/1/fdr": -5.0}
+        async def value(self, p): return self.v.get(p)
+        async def set(self, p, val): self.v[p] = val
+    w = FW(); ctx = Context(w, lambda: {})
+    run = lambda p: asyncio.run(a_level_set(ctx, {"target": "ch/1", **p}))
+    run({"db": 6, "rel": True}); assert w.v["/ch/1/fdr"] == 1.0
+    run({"db": "back"}); assert w.v["/ch/1/fdr"] == -5.0
+    w.v["/ch/1/fdr"] = 8.0
+    run({"db": 6, "rel": True}); assert w.v["/ch/1/fdr"] == 10.0     # capped at +10
+    run({"db": "back"}); assert w.v["/ch/1/fdr"] == 8.0               # back is exact despite the cap
+    run({"db": -6, "rel": True}); assert w.v["/ch/1/fdr"] == 2.0
+    w.v["/ch/1/fdr"] = NEG_INF
+    run({"db": 6, "rel": True}); assert w.v["/ch/1/fdr"] == NEG_INF   # -inf stays -inf
+    w.v["/ch/1/fdr"] = -86.0
+    run({"db": -6, "rel": True}); assert w.v["/ch/1/fdr"] == NEG_INF  # below -89.5: -inf
