@@ -185,7 +185,7 @@ def test_vial_macro_roundtrip():
     assert V.decode(buf + b"\0" * 20, 4) == macros + [[]]
 
 
-def test_burst_radiates_from_fired_key():
+def test_bloom_swells_out_of_the_fired_key_and_back():
     from wingmacro.leds import Leds
     from wingmacro.actions import Context
 
@@ -196,13 +196,13 @@ def test_burst_radiates_from_fired_key():
     ctx = Context(None, lambda: cfg)
     leds = Leds(lambda: cfg, FakePad(), None, ctx)
     leds.engine = Engine(lambda: cfg, ctx, leds)
-    leds.transient(5, "confirm", None, {"hold": True, "fire_anim": "burst", "hold_colour": "red"})
-    t0 = leds.bursts[0][1]
-    near = leds.frame(t0 + 0.2)                     # front past the neighbours of key 6, not the far corner
-    assert near[4][2] > 90 and near[6][2] > 90 and near[15][2] == 0
-    far = leds.frame(t0 + 0.55)                     # neighbours have faded; far corner lit, but dimmer
-    assert far[4][2] == 0 and 0 < far[15][2] < near[4][2] / 2
-    assert leds.frame(t0 + leds.BURST_TIME + 0.1) and not leds.bursts
+    leds.transient(5, "confirm", None, {"fire_anim": "burst", "hold_colour": "red"})   # old name still works
+    t0 = leds.blooms[0][1]
+    mid = leds.frame(t0 + 0.4)                      # widest: the key, its neighbours, not the far side
+    assert mid[5][2] == 200 and all(mid[i][2] > 90 for i in (1, 4, 6, 9)) and mid[15][2] == 0
+    assert leds.frame(t0 + 0.05)[4][2] < mid[4][2]   # still growing
+    end = leds.frame(t0 + leds.BLOOM_TIME + 0.05)
+    assert not leds.blooms and all(c[2] == 0 for c in end)
 
 
 def test_param_labels():
@@ -261,3 +261,17 @@ def test_v5_key_modes_and_fx_actions():
     assert cfg["layers"]["0"]["encoders"]["left"]["turn"] == [
         {"do": "param", "path": "/fx/1/dcy", "step": 0.1}, {"do": "param", "path": "/ch/1/eq/mdl"}]
     assert cfg["macros"]["m"]["steps"] == [{"do": "param_set", "path": "/fx/2/time", "value": 300}]
+
+
+def test_fire_anim_colour_and_bloom():
+    from wingmacro.leds import Leds
+    L = Leds.__new__(Leds)
+    L.engine = None
+    L.cfg = lambda: {"pad": {"background": [22, 255, 47]}}
+    assert L.anim_colour({}) == (22, 255, 200)                       # pad background, full brightness
+    assert L.anim_colour({"background": [128, 255, 60]}) == (128, 255, 200)  # the key's own colour
+    assert L.anim_colour({"background": "off"}) == (0, 0, 200)        # an unlit key animates white
+    assert L.anim_colour({"hold_colour": "red"})[2] == 200
+    near = [L.bloom_level(1, e) for e in (0.1, 0.4, 0.79)]
+    assert near[0] < near[1] and near[2] < 0.05                       # swells out, then back in
+    assert max(L.bloom_level(3, e / 100) for e in range(80)) < 0.01   # never reaches the far side

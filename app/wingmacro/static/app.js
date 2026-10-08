@@ -453,10 +453,10 @@ function keyEditor(idx) {
     sect("LED", h("p", { class: "hint" }, "Key colour is the key's resting colour. Macros change it with the Key LED action, e.g. a dim red here and full red in the macro."),
       field("Key colour", colourPicker(m.background, (v) => { m.background = v; }, { allowNone: true, noneLabel: "Pad background" })),
       h("div", { style: "height:10px" }),
-      field("Fire animation", seg([["none", "None"], ["flash", "Flash"], ["burst", "Flash + burst"]],
-        m.fire_anim || (m.hold ? "flash" : "none"), (v) => { m.fire_anim = v; commit(); }, "sm")),
-      h("p", { class: "hint" }, "Plays when the key fires. Burst sends a ring of light out across the pad."),
-      field("Animation colour", colourPicker(m.hold_colour, (v) => { m.hold_colour = v; }, { allowNone: true, noneLabel: "White (default)" })),
+      field("Fire animation", seg([["none", "None"], ["flash", "Flash"], ["bloom", "Bloom"]],
+        m.fire_anim === "burst" ? "bloom" : m.fire_anim || (m.hold ? "flash" : "none"), (v) => { m.fire_anim = v; commit(); }, "sm")),
+      h("p", { class: "hint" }, "Plays when the key fires. Bloom swells out of the key into its neighbours and back."),
+      field("Animation colour", colourPicker(m.hold_colour, (v) => { m.hold_colour = v; }, { allowNone: true, noneLabel: "Key colour at full brightness (default)" })),
       h("p", { class: "hint" }, "Used for the fire animation and, on hold keys, the glow while held.")));
   return [head([h("button", { class: "btn sm light", title: "Act as if the key were pressed (toggle state, LEDs and all)", onclick: () => testKey(wm) }, "▶ Test"),
     h("button", { class: "btn sm danger", onclick: () => { delete layerCfg(S.layer).buttons[wm]; commit(); } }, "Clear")]), body];

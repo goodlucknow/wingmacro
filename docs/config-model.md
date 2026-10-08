@@ -70,8 +70,10 @@ LED feedback for `hold`:
 - The colour state belongs to (mapping layer, key), so a key inherited on other layers shows the same colour. State is kept in memory: after an app restart, keys show their own colour and toggles start on A.
 - **Momentary** keys restore any colours they changed when released.
 - **Animations** (priority over the colour above): the hold glow while held and the armed flash, plus a **fire animation** when the key fires.
-  Set it with `fire_anim`: `none`, `flash`, or `burst` (a flash plus a ring of light spreading out across the pad). Hold keys default to `flash`, all others to `none`.
-  Animations use `hold_colour` (default white). The tap-tempo beat flash runs on tap keys.
+  Set it with `fire_anim`: `none`, `flash`, or `bloom` (light swells out of the key into its neighbours and shrinks
+  back, 0.8 s; replaced `burst` on 2026-10-08, which is still read as bloom). Hold keys default to flash, others to none.
+  Animations use `hold_colour`; by default the key's own colour (else the pad background) at full brightness.
+  The tap-tempo beat flash runs on tap keys.
 - Brightness is the V of an HSV colour (0–200). In the UI, every colour picker has a brightness slider, so a palette colour can be stored at any brightness.
 - Colours are HSV triples (0–255, as in VialRGB) or palette names: the WING's 12 colours in its order (`steel`, `sky`, `indigo`, `teal`, `green`, `olive`, `yellow`, `orange`, `red`, `coral`, `magenta`, `purple`), plus `white` and `off`, with LED values tuned for the pad (orange = the case/UI amber). The older names `crimson`, `amber`, `cyan` and `blue` are still accepted. The firmware caps brightness at 200.
 - When the layer changes, the app repaints all 16 LEDs with that layer's colours. On exit it restores VialRGB mode 2.
@@ -129,7 +131,7 @@ At slow speeds each tick is exactly one step. Faster turning multiplies the *num
                   { "do": "fade", "target": "main/1", "db": "-inf", "time": 5 },
                   { "do": "mute", "target": "main/1", "op": "on" } ] },
         "4":  { "mode": "toggle", "hold": true, "hold_ms": 800, "background": [0, 255, 40],
-                "fire_anim": "burst", "hold_colour": "red",
+                "fire_anim": "bloom", "hold_colour": "red",
                 "do":  [{ "do": "macro", "name": "Band out" }, { "do": "led", "colour": "red" }],
                 "off": [{ "do": "mgrp", "n": 2, "op": "off" }, { "do": "mute", "target": "dca/1", "op": "off" },
                         { "do": "fade", "target": "dca/1", "db": 0, "time": 10 }, { "do": "led", "colour": "base" }] },

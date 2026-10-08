@@ -32,25 +32,40 @@ class Leds:
         self.engine = None
         self.fx = {}  # idx -> (kind, t0, dur, colour)
         self.last = [OFF] * N_LEDS  # latest frame, for the web UI preview
-        self.bursts = []  # (source idx, t0, colour): rings radiating across the pad
+        self.blooms = []  # (source idx, t0, colour): glow spreading out of a key and back in
+
+    def pad_background(self, layer=None):
+        cfg = self.cfg()
+        layer = (self.engine.layer if self.engine else 0) if layer is None else layer
+        return colour(cfg.get("layers", {}).get(str(layer), {}).get("background"),
+                      colour(cfg.get("pad", {}).get("background"), (22, 255, 47)))
+
+    def anim_colour(self, mapping):
+        """`hold_colour`, or by default the key's own colour (else the pad background) at full brightness."""
+        if mapping.get("hold_colour") is not None:
+            return colour(mapping["hold_colour"], FLASH)
+        h, s, v = colour(mapping.get("background"), self.pad_background())
+        return (h, s, 200) if v or s else FLASH  # a key set to off/black animates white
 
     def transient(self, idx, kind, dur, mapping):
         """Feedback from the engine: hold progress fill, armed flash, and the fire animation
-        (`fire_anim`: none | flash | burst; hold keys default to flash, others to none).
-        All use the mapping's `hold_colour` (default white)."""
+        (`fire_anim`: none | flash | bloom; hold keys default to flash, others to none).
+        All use anim_colour()."""
         if kind == "clear":
             self.fx.pop(idx, None)
             return
-        target = colour(mapping.get("hold_colour"), FLASH)
+        target = self.anim_colour(mapping)
         now = time.monotonic()
-        if kind == "confirm":  # 3 flashes, 150 ms on / 150 ms off
+        if kind == "confirm":
             anim = mapping.get("fire_anim", "flash" if mapping.get("hold") else "none")
             if anim == "none":
                 self.fx.pop(idx, None)
                 return
-            dur = 0.75
-            if anim == "burst":
-                self.bursts.append((idx, now, target))
+            if anim in ("bloom", "burst"):  # "burst" was the old name
+                self.blooms.append((idx, now, target))
+                kind, dur = "glow", self.BLOOM_TIME  # the key itself stays lit while it blooms
+            else:
+                dur = 0.75  # 3 flashes, 150 ms on / 150 ms off
         self.fx[idx] = (kind, now, dur, target)
 
     def key_colour(self, layer, idx, m, bg_default, now):
@@ -62,10 +77,8 @@ class Leds:
         return colour(m.get("background"), bg_default)
 
     def frame(self, now):
-        cfg = self.cfg()
         layer = self.engine.layer if self.engine else 0
-        bg_default = colour(cfg.get("layers", {}).get(str(layer), {}).get("background"),
-                            colour(cfg.get("pad", {}).get("background"), (22, 255, 47)))
+        bg_default = self.pad_background(layer)
         out = [bg_default] * N_LEDS
         for idx in range(N_LEDS):
             wm = self.pad.key_wm(layer, idx) if self.pad.keymap else idx + 1
@@ -93,44 +106,46 @@ class Leds:
                     del self.fx[idx]
                     continue
                 out[idx] = target if int(e / 0.15) % 2 == 0 else OFF
-        self._draw_bursts(out, now)
+            elif kind == "glow":
+                if e > dur:
+                    del self.fx[idx]
+                    continue
+                k = 1 - self._smooth((e - (dur - 0.15)) / 0.15)  # eases back to the key's colour at the end
+                out[idx] = (target[0], target[1], int(out[idx][2] + (target[2] - out[idx][2]) * k))
+        self._draw_blooms(out, now)
         return out
 
-    # Burst, after QMK's SOLID_SPLASH (quantum/rgb_matrix/animations/solid_splash_anim.h): a wavefront
-    # spreads from the key; each key lights as the front reaches it, then fades out behind it.
-    BURST_TIME = 1.0   # whole animation, seconds
-    BURST_SPEED = 7.0  # keys per second: the front crosses the pad in ~0.6 s
-    BURST_FADE = 0.38  # seconds each key takes to fade after the front passes
-    BURST_EDGE = 0.9   # soft leading edge, in keys
-    BURST_FAR = 0.4    # strength at the far corner (4.24 keys away), relative to the neighbours
+    # Bloom: light swells out of the pressed key into its neighbours and shrinks back into it.
+    # The radius rises and falls over BLOOM_TIME; keys inside it light, with a soft edge.
+    BLOOM_TIME = 0.8    # seconds, out and back
+    BLOOM_RADIUS = 1.5  # keys at its widest: neighbours fully, diagonals partly, nothing much further
+    BLOOM_EDGE = 1.1    # soft edge, in keys
+    BLOOM_FALLOFF = 0.3 # dimmer with distance: neighbours ~80%, diagonals ~70%
 
     @staticmethod
     def _smooth(x):
         x = min(1.0, max(0.0, x))
         return x * x * (3 - 2 * x)
 
-    def burst_level(self, d, e):
+    def bloom_level(self, d, e):
         """0..1 brightness of a key `d` keys from the source, `e` seconds after firing."""
-        sm = self._smooth
-        lag = e - d / self.BURST_SPEED                      # seconds since the front reached this key
-        lead = sm(1 + lag * self.BURST_SPEED / self.BURST_EDGE)   # eases in just ahead of the front
-        tail = 1 - sm(lag / self.BURST_FADE)                 # eases out behind it
-        reach = 1 - (1 - self.BURST_FAR) * min(d / 4.24, 1)  # weaker the further it travels, never zero
-        end = 1 - sm((e - (self.BURST_TIME - 0.1)) / 0.1)    # everything gone by BURST_TIME
-        k = lead * tail * end
-        return k * k * reach  # squared envelope: LED brightness is linear, the eye isn't
+        if not 0 <= e < self.BLOOM_TIME:
+            return 0.0
+        r = self.BLOOM_RADIUS * math.sin(math.pi * e / self.BLOOM_TIME)  # out, then back in
+        k = self._smooth(1 - (d - r) / self.BLOOM_EDGE) * (1 - self.BLOOM_FALLOFF * min(d, 2) / 1.5)
+        return k * k  # LED brightness is linear, the eye isn't
 
-    def _draw_bursts(self, out, now):
-        self.bursts = [b for b in self.bursts if now - b[1] < self.BURST_TIME]
-        for src, t0, c in self.bursts:
+    def _draw_blooms(self, out, now):
+        self.blooms = [b for b in self.blooms if now - b[1] < self.BLOOM_TIME]
+        for src, t0, c in self.blooms:
             e = now - t0
             sy, sx = divmod(src, 4)
             for idx in range(N_LEDS):
                 if idx == src:
                     continue
                 y, x = divmod(idx, 4)
-                k = self.burst_level(math.hypot(x - sx, y - sy), e)
-                if k > 0.01 and c[2] * k > out[idx][2]:
+                k = self.bloom_level(math.hypot(x - sx, y - sy), e)
+                if c[2] * k > out[idx][2]:  # takes over once brighter than the key's own colour
                     out[idx] = (c[0], c[1], int(c[2] * k))
 
     def _tap(self, now, c, step):
@@ -143,7 +158,7 @@ class Leds:
     async def run(self):
         loop = asyncio.get_running_loop()
         while True:
-            await asyncio.sleep(1 / 60 if self.bursts or self.fx else 1 / 30)  # smoother while animating
+            await asyncio.sleep(1 / 60 if self.blooms or self.fx else 1 / 30)  # smoother while animating
             if not self.engine:
                 continue
             try:
