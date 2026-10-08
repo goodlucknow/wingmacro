@@ -24,11 +24,14 @@ Pad is plugged into the container, firmware proto 4. Console: WING Rack "FRack" 
 
 ## Decisions (user, 2026-10-08)
 
-- Auto-matching to the equivalent param in the new model: **yes, when sensible** (e.g. Ultratap Repeats ↔ WING
-  delay Feed). The user's intuition: a console control/CC assigned to feedback on one delay model would land on
-  repeats on another. **Check that idea in the survey**: the console may address FX params by position
-  (`NodeDef.idx`); if equivalent params share an index across related models, use that as a matching signal
-  (after same key, alongside the alias table), but confirm on real data before trusting it.
+- **The WING itself maps by position** (user test, 2026-10-08): a console CC on WING delay Feedback, after switching
+  the slot to Ultratap, lands on Move/Jump/Focus/Spread, whatever sits in the same place. So positions are not
+  semantic. User wants: **detect slot model changes and adapt, never silently map to nothing; mapped to something
+  beats mapped to nothing.**
+  Plan: (1) same key, (2) our own equivalence (alias table by role, then same longname, type/unit-compatible),
+  (3) else fall back to the **same position** (`NodeDef.idx`, i.e. what the WING does), (4) only if the new model has
+  fewer params: nothing, shown as "n/a". The pad screen label always shows the param it now drives, and the UI
+  shows "now: <param> (made on <model>)" so the change is visible. Re-resolve when the `mdl` change event arrives.
 - Knob option lists **stop at the ends by default**; per-step **Wrap** toggle to turn wrapping on.
 
 ## Proposed fix
@@ -38,11 +41,11 @@ Pad is plugged into the container, firmware proto 4. Console: WING Rack "FRack" 
 2. **Resolve at run time**: if `path`'s param doesn't exist in the slot's current model (or the model differs from
    `pref.model`), find the equivalent in the new model, in this order:
    same key → alias table (roles, e.g. feedback = `feed`/`rep`/`fb`…, time, factor/subdivision, pre-delay, decay,
-   size, damping, lo/hi cut, mix) → same longname → nothing. Never guess across types/units badly (a % param must
+   size, damping, lo/hi cut, mix) → same longname → same position (WING-style) → nothing. Never guess across types/units badly (a % param must
    not drive an enum).
    Build the alias table from real data: dump the defs of every FX model (see test 1) into
    `docs/wing-fx-models-3.1.1.json` and group equivalent keys by role.
-3. **No match**: do nothing, log once, and show "— n/a" on the pad screen (label + "n/a") so the user sees why.
+3. **No match** (only when the position doesn't exist either): do nothing, log once, and show "— n/a" on the pad screen (label + "n/a") so the user sees why.
    The UI shows the mapping as unavailable in the current model (greyed, with the model it was made for).
 4. **Ends**: knob option lists stop at the ends by default (same as numbers). Add a per-step "Wrap" toggle
    (FX-slot-style button, like the tap Flash button) for anyone who wants wrapping. Keys' Increase/Decrease keep
