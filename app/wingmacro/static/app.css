@@ -246,7 +246,9 @@ textarea.raw { width: 100%; min-height: 360px; background: #050505; color: var(-
 .modal { position: fixed; inset: 0; background: #000a; display: grid; place-items: center; z-index: 10; padding: 16px; }
 .modal[hidden] { display: none; }
 .dialog { background: var(--panel); border: 1px solid #000; border-radius: var(--r); width: min(980px, 100%); max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 10px 40px #000; }
-.dialog .pbody { overflow: auto; }
+.dialog .pbody { overflow: auto; flex: 1; }
+/* pickers keep one size across tabs; longer lists scroll inside instead of resizing the window */
+.dialog:not(.msg) { height: min(680px, 90vh); }
 .dialog.msg { width: min(460px, 100%); }
 .dialog.msg .pbody { padding: 16px 18px 6px; }
 .dialog.msg .pbody p { margin: 0 0 8px; }
