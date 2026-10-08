@@ -189,16 +189,17 @@ class Leds:
         return None, 0.0
 
     TAP_PEAK = 0.03  # s at full brightness on each beat: a hard attack
-    AFTER_TAP_BEATS = 8  # `beat_flash: after_tap`: flash this many beats after the last tap, then rest
+    AFTER_TAP_BEATS = 8  # tap step with `flash: false`: flash this many beats after the last tap, then rest
 
     def _tap(self, now, c, step, m):
         """Beat flash: hard attack (full for TAP_PEAK), then a quick smooth decay."""
         period, origin = self.tap_period(step, now)
         if not period:
             return c
-        if m.get("beat_flash") == "after_tap":  # only the first AFTER_TAP_BEATS beats after tapping
+        if step.get("flash") is False:  # flash off: only AFTER_TAP_BEATS beats after the last tap
             tapped = self.ctx.taps.get(tuple(sorted(int(x) for x in step.get("slots", []))))
-            if not tapped or not tapped["ms"] or now - tapped["t"][-1] >= self.AFTER_TAP_BEATS * period:
+            # the beat on the tap itself doesn't count: it reads as the press, not as a beat
+            if not tapped or not tapped["ms"] or now - tapped["t"][-1] >= (self.AFTER_TAP_BEATS + 0.5) * period:
                 return c
         since = (now - origin) % period
         k = 1.0 if since < self.TAP_PEAK else math.exp(-(since - self.TAP_PEAK) / min(0.06, period / 8))

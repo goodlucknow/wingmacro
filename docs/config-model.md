@@ -81,8 +81,8 @@ LED feedback for `hold`:
   - **Momentary** keys glow at full while held; with `bloom` (their default) the bloom grows and holds at its widest
     while held, shrinking back on release. `none` = just the key's glow.
 - **Tap-tempo keys** flash on the beat (sharp attack, ~0.1 s decay): the tapped tempo, or else the first slot's
-  `time` read from the console. `"beat_flash": "after_tap"` flashes only for 8 beats after the last tap, then rests
-  (default `always`).
+  `time` read from the console. With `"flash": false` on the tap action, the key flashes only for the 8 beats after
+  the last tap (not counting the tap itself), then rests.
 - The `led` action's `pulse` effect breathes at about 0.5 Hz.
 - Brightness is the V of an HSV colour (0–200). In the UI, every colour picker has a brightness slider, so a palette colour can be stored at any brightness.
 - Colours are HSV triples (0–255, as in VialRGB) or palette names: the WING's 12 colours in its order (`steel`, `sky`, `indigo`, `teal`, `green`, `olive`, `yellow`, `orange`, `red`, `coral`, `magenta`, `purple`), plus `white` and `off`, with LED values tuned for the pad (orange = the case/UI amber). The older names `crimson`, `amber`, `cyan` and `blue` are still accepted. The firmware caps brightness at 200.
@@ -107,7 +107,7 @@ Every fader-type target follows the same floor rules.
 | `level_set` | `target`, `db` (number or `"-inf"`) | button | |
 | `param` | `path`, `step?`, `plabel?` | rotary | Any console parameter (e.g. `/ch/3/send/MX1/lvl`, `/fx/3/time`), stepped by its console type: int 1, linf 0.01 (range < 10) or 0.1, fader 0.1 dB with the floor rules, logf proportional to the value, option lists one option per tick (wrapping round). `plabel` is the display name saved by the picker. |
 | `param_set` | `path`, `value` or `op: inc\|dec`, `step?`, `wrap?`, `plabel?` | button | Sets any parameter to a value (coerced to its type), or one step up/down: the next/previous option for lists. Stops at the ends unless `wrap`. |
-| `tap` | `slots` (list), `window?` (default 4) | button | Tap time is taken at the key press. Moving average of the last `window` intervals; a gap of 2 s or more starts over. Writes the beat period as-is to `/fx/N/time` of each listed slot. No multiplier: the delay's own `fact` (subdivision) stays on the console and can be mapped like any param. Slots without a `time` param in ms (e.g. BBD-DL) are skipped. Tap state is per slot set; the WING has no global tempo. |
+| `tap` | `slots` (list), `window?` (default 4), `flash?` (default true) | button | Tap time is taken at the key press. Moving average of the last `window` intervals; a gap of 2 s or more starts over. Writes the beat period as-is to `/fx/N/time` of each listed slot. No multiplier: the delay's own `fact` (subdivision) stays on the console and can be mapped like any param. Slots without a `time` param in ms (e.g. BBD-DL) are skipped. Tap state is per slot set; the WING has no global tempo. |
 | `refresh` | — | button | Reconnects if needed, polls state and rescans the FX slots (and so the delays). |
 | `led` | `colour`, `effect?`, `layer?` + `key?` | button | Sets a key's LED (see LED rules). |
 | `wait` | `ms` | step | |

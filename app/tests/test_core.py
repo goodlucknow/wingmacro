@@ -322,13 +322,14 @@ def test_tap_key_fires_on_key_down_without_cancel_window():
     assert fired == ["t", "t", "t"] and not eng.buttons
 
 
-def test_beat_flash_after_tap_rests_after_8_beats():
+def test_beat_flash_off_flashes_8_beats_after_the_tap():
     from wingmacro.leds import Leds
     from wingmacro.actions import Context
     ctx = Context(None, lambda: {})
     L = Leds(lambda: {"pad": {"background": [22, 255, 47]}}, None, None, ctx)
     ctx.taps[(3,)] = {"t": [100.0], "ms": 500.0}
-    step, base = {"do": "tap", "slots": [3]}, (22, 255, 47)
-    for mode, beat in (("always", 20), ("after_tap", 2), ("after_tap", 20)):
-        flash = L._tap(100.0 + beat * 0.5 + 0.01, base, step, {"beat_flash": mode})
-        assert (flash[2] == 200) == (mode == "always" or beat < 8)
+    base = (22, 255, 47)
+    lit = lambda step, beat: L._tap(100.0 + beat * 0.5 + 0.01, base, step, {})[2] == 200
+    on, off = {"do": "tap", "slots": [3]}, {"do": "tap", "slots": [3], "flash": False}
+    assert lit(on, 20)                                              # flash on: every beat
+    assert all(lit(off, b) for b in range(1, 9)) and not lit(off, 9)  # off: 8 beats after the tap, then rest
