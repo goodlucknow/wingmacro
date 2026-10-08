@@ -184,7 +184,7 @@ def tap_key(p):
 
 
 async def a_tap(ctx, p, ticks=None):
-    """Moving average of the last TAP_WINDOW tap intervals, written as-is to /fx/N/time of each
+    """Moving average of the last TAP_WINDOW tap intervals, rounded to a whole BPM, written to /fx/N/time of each
     slot in `slots`. The delay's own `fact` (subdivision) stays on the console. Slots without a
     `time` param in ms (e.g. BBD-DL, which uses /dly) are skipped."""
     st = ctx.taps.setdefault(tap_key(p), {"t": [], "ms": None})
@@ -195,6 +195,7 @@ async def a_tap(ctx, p, ticks=None):
     if len(st["t"]) < 2:
         return
     period = (st["t"][-1] - st["t"][0]) / (len(st["t"]) - 1)
+    period = 60 / max(1, round(60 / period))  # whole BPM, as most music is
     st["ms"] = period * 1000
     for cb in ctx.on_beat:
         cb(period)

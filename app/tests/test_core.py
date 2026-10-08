@@ -110,7 +110,7 @@ def test_tap_moving_average():
         await a_tap(ctx, {"slots": [3], "_t0": 110.0})  # gap >= 2 s: starts over, no write
     asyncio.run(go())
     assert written[:4] == [("/fx/3/time", 500.0)] * 4
-    assert written[4] == ("/fx/3/time", 525.0)  # window of 4 intervals: (500*3+600)/4
+    assert written[4] == ("/fx/3/time", 526.3)  # window of 4: (500*3+600)/4 = 525 ms = 114.3 BPM -> 114 BPM
     assert len(written) == 5
 
 

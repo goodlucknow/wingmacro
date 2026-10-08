@@ -93,8 +93,10 @@ const uint16_t PROGMEM encoder_map[][NUM_ENCODERS][NUM_DIRECTIONS] = {
         uint8_t  digits[3], n = 0, x = 0;
         do { digits[n++] = whole % 10; whole /= 10; } while (whole && n < 3);
         while (n) x = bpm_put(buf, x, digits[--n]);
-        x = bpm_put(buf, x, 10);              /* '.' */
-        x = bpm_put(buf, x, bpm_x10 % 10);
+        if (bpm_x10 % 10) {                   /* decimal only if there is one (the app sends whole BPM) */
+            x = bpm_put(buf, x, 10);          /* '.' */
+            x = bpm_put(buf, x, bpm_x10 % 10);
+        }
         bpm_put(buf, x + 3, 11);              /* "BPM" */
         oled_write_raw((const char *)buf, sizeof(buf));  /* only changed bytes are re-sent */
     }
