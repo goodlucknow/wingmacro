@@ -136,7 +136,7 @@ CLAUDE.md
 
 1. ~~Pad map~~ and ~~Vial keymap~~: done (2026-10-07). See `docs/pad-map.md` and `firmware/`.
 2. ~~Config model~~ (`docs/config-model.md`) and ~~app skeleton~~: done 2026-10-07, tested on the WING + pad (mute, level/floor, accel, push-turn, hold/cancel, soft-mute fades, LEDs).
-3. Full mapping UI in the browser, styled after the official WING apps (no Behringer logos/names). Pad view with layer tabs → control editor (trigger, action list, LED rule) with console-fed pickers; macro library; settings. Waiting on Wing Edit screenshots from the user for the look.
+3. ~~Full mapping UI~~: built (pad view + layers, control editor, console-fed pickers, macros, console, setup, keymap, import/export). No screenshots needed (user, 2026-10-08): keep to the existing look, styled after the official WING apps (no Behringer logos/names). Remaining: polish only.
    - Config is per-machine; the UI gets import/export to move configs between hosts (decided 2026-10-07).
    - Run model (decided 2026-10-07): background service + browser UI, no launchable app. Linux: systemd, UI open on the LAN (no auth for now). Windows/macOS: login autostart + tray/menu-bar icon (Open UI / Quit / status), localhost UI, PyInstaller packaging.
 3b. ~~Keymap editor (Vial replacement)~~: done 2026-10-07, Keymap page; WM and ordinary keycodes, knob turns/pushes, Vial keystroke macros (with unlock), tap dance, combos. Key/encoder/tap-dance/combo writes verified on the pad; macro save + unlock still to be tried by the user. No QK_BOOT by design.
