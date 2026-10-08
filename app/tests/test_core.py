@@ -466,3 +466,12 @@ def test_option_lists_stop_at_the_ends_unless_wrap():
         await a_param_set(ctx, {"path": "/fx/8/fact", "op": "inc"})
         assert w.v["/fx/8/fact"] == items[-1]
     asyncio.run(go())
+
+
+def test_wing_forgets_param_hashes_on_model_change():
+    w = W.Wing("x")
+    for path, h in (("/fx/4/mdl", 1), ("/fx/4/time", 2), ("/fx/4/fact", 3), ("/fx/40/time", 4)):
+        w.hash_path[h] = path; w.path_hash[path] = h; w.values[path] = 0
+    w.forget("/fx/4")
+    assert set(w.path_hash) == {"/fx/4/mdl", "/fx/40/time"} and set(w.hash_path) == {1, 4}
+    assert set(w.values) == {"/fx/4/mdl", "/fx/40/time"}

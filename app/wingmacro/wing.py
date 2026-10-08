@@ -292,6 +292,16 @@ class Wing:
         self._changed(path, value)
         return True
 
+    def forget(self, node):
+        """Drop cached hashes and values under `node` (not the node's own `mdl`): parameter hashes
+        belong to the loaded model (verified 2026-10-08: HALL pdel has TAP-DL time's hash), so after a
+        model change a stale hash would write to, or report, another parameter."""
+        pre = "/" + node.strip("/") + "/"
+        for path in [p for p in self.path_hash if p.startswith(pre) and p != pre + "mdl"]:
+            self.hash_path.pop(self.path_hash.pop(path), None)
+        for path in [p for p in self.values if p.startswith(pre) and p != pre + "mdl"]:
+            del self.values[path]
+
     def cached(self, path, default=None):
         return self.values.get(path, default)
 

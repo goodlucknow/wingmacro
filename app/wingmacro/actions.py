@@ -235,7 +235,9 @@ async def a_refresh(ctx, p, ticks=None):
     w = ctx.wing
     if not w.connected:
         return
-    ctx.invalidate_fx()
+    for node in {*(n for n, d in ctx.node_defs_cache.items() if "mdl" in d), *(f"/fx/{i}" for i in range(1, 17))}:
+        w.forget(node)  # models may have changed while we weren't looking; their hashes with them
+    ctx.invalidate()
     for slot in range(1, 17):
         ctx.fx_models[slot] = await w.get(f"/fx/{slot}/mdl")
     await w.refresh()
