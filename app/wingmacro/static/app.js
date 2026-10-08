@@ -443,21 +443,28 @@ function keyEditor(idx) {
         momentary: "On runs when the key goes down, Off when it comes back up (e.g. talkback).",
       }[m.mode] || "Runs its actions each time it fires."),
       m.mode !== "momentary" && h("div", { class: "row", style: "margin-top:10px" },
-        field("Hold to fire", seg([[false, "Off"], [true, "On"]], !!m.hold, (v) => { if (v) m.hold = true; else { delete m.hold; delete m.hold_ms; delete m.cancel_ms; } commit(); }, "sm")),
-        // always laid out, hidden unless Hold, so the row never shifts
-        h("div", { class: "row", style: m.hold ? "" : "visibility:hidden" },
-          field("Hold time", h("span", {}, numInput(m.hold_ms, (v) => { m.hold_ms = v; }, { ph: pad.hold_ms ?? 800, step: 50, min: 100 }), h("span", { class: "unit" }, "ms"))),
+        field("Hold to fire", seg([[false, "Off"], [true, "On"]], !!m.hold, (v) => {
+          if (v) m.hold = true; else { delete m.hold; delete m.hold_ms; if (m.mode === "toggle") delete m.cancel_ms; } commit(); }, "sm")),
+        // always laid out, hidden when not used, so the row never shifts
+        h("div", { style: m.hold ? "" : "visibility:hidden" },
+          field("Hold time", h("span", {}, numInput(m.hold_ms, (v) => { m.hold_ms = v; }, { ph: pad.hold_ms ?? 800, step: 50, min: 100 }), h("span", { class: "unit" }, "ms")))),
+        h("div", { style: m.hold || (m.mode || "single") === "single" ? "" : "visibility:hidden" },
           field("Cancel window", h("span", {}, numInput(m.cancel_ms, (v) => { m.cancel_ms = v; }, { ph: pad.cancel_ms ?? 400, step: 50, min: 0 }), h("span", { class: "unit" }, "ms"))))),
-      m.hold && m.mode !== "momentary" && h("p", { class: "hint" }, "A safety for risky actions: hold until the key lights fully, then release. It flashes while armed; tap it again within the cancel window to cancel.")),
+      m.mode !== "momentary" && h("p", { class: "hint" }, m.hold
+        ? "A safety for risky actions: hold until the key lights fully, then release. It strobes while armed; tap it again within the cancel window to cancel."
+        : (m.mode || "single") === "single"
+          ? "Fires on release, after the cancel window: it strobes meanwhile, and a second tap cancels. Set 0 to fire straight away."
+          : "Fires on release. The key shows full brightness while on.")),
     sect("Actions", actionsEditor(m)),
     sect("LED", h("p", { class: "hint" }, "Key colour is the key's resting colour. Macros change it with the Key LED action, e.g. a dim red here and full red in the macro."),
       field("Key colour", colourPicker(m.background, (v) => { m.background = v; }, { allowNone: true, noneLabel: "Pad background" })),
       h("div", { style: "height:10px" }),
-      field("Fire animation", seg([["none", "None"], ["flash", "Flash"], ["bloom", "Bloom"]],
-        m.fire_anim === "burst" ? "bloom" : m.fire_anim || (m.hold ? "flash" : "none"), (v) => { m.fire_anim = v; commit(); }, "sm")),
-      h("p", { class: "hint" }, "Plays when the key fires. Bloom swells out of the key into its neighbours and back."),
+      field("Fire animation", seg(m.mode === "momentary" ? [["none", "None"], ["bloom", "Bloom"]] : [["none", "None"], ["flash", "Flash"], ["bloom", "Bloom"]],
+        m.fire_anim === "burst" ? "bloom" : m.fire_anim || (m.mode === "momentary" ? "bloom" : m.hold ? "flash" : "none"), (v) => { m.fire_anim = v; commit(); }, "sm")),
+      h("p", { class: "hint" }, m.mode === "momentary" ? "Bloom swells out into the neighbouring keys while the key is held and shrinks back on release."
+        : "Plays when the key fires. Bloom swells out of the key into its neighbours and back."),
       field("Animation colour", colourPicker(m.hold_colour, (v) => { m.hold_colour = v; }, { allowNone: true, noneLabel: "Key colour at full brightness (default)" })),
-      h("p", { class: "hint" }, "Used for the fire animation and, on hold keys, the glow while held.")));
+      h("p", { class: "hint" }, "Used for the press animations (the charge while held, the strobe, the fire animation) and a toggle's On state.")));
   return [head([h("button", { class: "btn sm light", title: "Act as if the key were pressed (toggle state, LEDs and all)", onclick: () => testKey(wm) }, "▶ Test"),
     h("button", { class: "btn sm danger", onclick: () => { delete layerCfg(S.layer).buttons[wm]; commit(); } }, "Clear")]), body];
 }

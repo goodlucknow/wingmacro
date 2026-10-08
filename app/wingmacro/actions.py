@@ -188,7 +188,7 @@ async def a_tap(ctx, p, ticks=None):
     slot in `slots`. The delay's own `fact` (subdivision) stays on the console. Slots without a
     `time` param in ms (e.g. BBD-DL, which uses /dly) are skipped."""
     st = ctx.taps.setdefault(tap_key(p), {"t": [], "ms": None})
-    now = p.get("_t0", time.monotonic())  # press time, so release timing doesn't add jitter
+    now = p.get("_t0") or time.monotonic()  # press time, so release timing doesn't add jitter
     if st["t"] and now - st["t"][-1] >= TAP_RESET:
         st["t"] = []
     st["t"] = (st["t"] + [now])[-(int(p.get("window", TAP_WINDOW)) + 1):]

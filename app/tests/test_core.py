@@ -50,10 +50,19 @@ def make_engine(buttons, **pad):
     return eng, fired
 
 
-def test_press_fires_on_release():
-    eng, fired = make_engine({"1": {"mode": "single", "do": [{"v": "a"}]}})
-    eng.press(1, 0); assert fired == []
-    eng.release(1, 0); assert fired == ["a"]
+def test_one_shot_fires_after_its_cancel_window_toggle_at_once():
+    async def go():
+        eng, fired = make_engine({"1": {"mode": "single", "do": [{"v": "a"}]},
+                                  "2": {"mode": "toggle", "do": [{"v": "on"}], "off": [{"v": "off"}]},
+                                  "3": {"mode": "single", "cancel_ms": 0, "do": [{"v": "now"}]}})
+        eng.press(1, 0); assert fired == []
+        eng.release(1, 0); assert fired == []            # armed: cancel window (100 ms here)
+        await asyncio.sleep(0.15); assert fired == ["a"]
+        eng.press(1, 0); eng.release(1, 0); eng.press(1, 0); eng.release(1, 0)   # tap again: cancelled
+        await asyncio.sleep(0.15); assert fired == ["a"]
+        eng.press(2, 1); eng.release(2, 1); assert fired == ["a", "on"]          # toggles: no cancel window
+        eng.press(3, 2); eng.release(3, 2); assert fired == ["a", "on", "now"]   # cancel_ms 0: at once
+    asyncio.run(go())
 
 
 def test_hold_arm_fire_and_cancel():
@@ -197,11 +206,11 @@ def test_bloom_swells_out_of_the_fired_key_and_back():
     leds = Leds(lambda: cfg, FakePad(), None, ctx)
     leds.engine = Engine(lambda: cfg, ctx, leds)
     leds.transient(5, "confirm", None, {"fire_anim": "burst", "hold_colour": "red"})   # old name still works
-    t0 = leds.blooms[0][1]
+    t0 = leds.blooms[5][0]
     mid = leds.frame(t0 + 0.4)                      # widest: the key, its neighbours, not the far side
     assert mid[5][2] == 200 and all(mid[i][2] > 90 for i in (1, 4, 6, 9)) and mid[15][2] == 0
     assert leds.frame(t0 + 0.05)[4][2] < mid[4][2]   # still growing
-    end = leds.frame(t0 + leds.BLOOM_TIME + 0.05)
+    end = leds.frame(t0 + 2 * leds.BLOOM_HALF + 0.05)
     assert not leds.blooms and all(c[2] == 0 for c in end)
 
 
@@ -273,5 +282,32 @@ def test_fire_anim_colour_and_bloom():
     assert L.anim_colour({"background": "off"}) == (0, 0, 200)        # an unlit key animates white
     assert L.anim_colour({"hold_colour": "red"})[2] == 200
     near = [L.bloom_level(1, e) for e in (0.1, 0.4, 0.79)]
+    L.blooms = {}
     assert near[0] < near[1] and near[2] < 0.05                       # swells out, then back in
     assert max(L.bloom_level(3, e / 100) for e in range(80)) < 0.01   # never reaches the far side
+
+
+def test_momentary_bloom_holds_while_down_and_toggle_shows_state():
+    from wingmacro.leds import Leds
+    from wingmacro.actions import Context
+
+    class FakePad:
+        keymap = []
+        connected = False
+    cfg = {"pad": {"background": [22, 255, 47]}, "macros": {}, "layers": {"0": {"buttons": {
+        "6": {"mode": "momentary", "do": [], "off": []}, "1": {"mode": "toggle", "do": [], "off": []}}}}}
+    ctx = Context(None, lambda: cfg)
+    leds = Leds(lambda: cfg, FakePad(), None, ctx)
+    leds.engine = Engine(lambda: cfg, ctx, leds)
+    m = cfg["layers"]["0"]["buttons"]["6"]
+    leds.transient(5, "held", None, m)              # momentary default animation: bloom
+    t0 = leds.blooms[5][0]
+    a, b = leds.frame(t0 + 0.5), leds.frame(t0 + 3.0)
+    assert a[5][2] == 200 and a[4][2] > 90 and b[4][2] == a[4][2]   # held at its widest
+    leds.transient(5, "release", None, m)
+    tr = leds.blooms[5][2]
+    assert leds.frame(tr + 0.2)[4][2] < b[4][2] and leds.frame(tr + 0.45)[4][2] == 47 and not leds.blooms
+    leds.engine.toggles[(0, 1)] = True               # toggle on: full brightness; off: own colour
+    assert leds.frame(tr + 1)[0] == (22, 255, 200)
+    leds.engine.toggles[(0, 1)] = False
+    assert leds.frame(tr + 1)[0] == (22, 255, 47)

@@ -10,6 +10,7 @@ log = logging.getLogger(__name__)
 PUSH_POS = {(0, 4): "left", (1, 4): "right"}
 KNOBS = ["left", "right"]
 ROW_CW, ROW_CCW = 253, 252
+CHARGE = 0.2  # s: the LED "charge" on key down for keys without hold to fire
 # (max seconds between ticks, step multiplier); slower than all thresholds = 1 step per tick
 ACCEL = {
     "off": [],
@@ -120,6 +121,8 @@ class Engine:
             st["phase"] = "holding"
             st["hold"] = m.get("hold_ms", pad.get("hold_ms", 800)) / 1000
             self._led(st, "progress", st["hold"])
+        else:
+            self._led(st, "progress", CHARGE)  # same charge-and-release feel as a hold key, just quick
         self.buttons[wm] = st
 
     def release(self, wm, idx):
@@ -127,8 +130,11 @@ class Engine:
         if not st:
             return
         if st["phase"] == "pressed":
-            del self.buttons[wm]
-            self.fire(st)
+            if st["map"].get("mode", "single") == "single" and self._cancel_s(st) > 0:
+                self._arm(st)  # one-shots get a cancel window too
+            else:
+                del self.buttons[wm]
+                self.fire(st)
         elif st["phase"] == "held":
             del self.buttons[wm]
             self._momentary_end(st)
@@ -136,23 +142,28 @@ class Engine:
             del self.buttons[wm]
         elif st["phase"] == "holding":
             if time.monotonic() - st["t0"] >= st["hold"]:
-                cancel = st["map"].get("cancel_ms", self.cfg().get("pad", {}).get("cancel_ms", 400)) / 1000
-                st["phase"] = "armed"
-                st["timer"] = asyncio.get_running_loop().call_later(cancel, self._armed_fire, wm)
-                self._led(st, "armed", cancel)
+                self._arm(st)
             else:
                 del self.buttons[wm]
                 self._led(st, "clear")
 
+    def _cancel_s(self, st):
+        return st["map"].get("cancel_ms", self.cfg().get("pad", {}).get("cancel_ms", 400)) / 1000
+
+    def _arm(self, st):
+        """Released: wait out the cancel window (a press of the same key cancels), then fire."""
+        cancel = self._cancel_s(st)
+        st["phase"] = "armed"
+        st["timer"] = asyncio.get_running_loop().call_later(cancel, self._armed_fire, st["wm"])
+        self._led(st, "armed", cancel)
+
     def _armed_fire(self, wm):
         st = self.buttons.pop(wm, None)
         if st:
-            self._led(st, "confirm")
             self.fire(st)
 
     def fire(self, st):
-        if not st["map"].get("hold"):  # hold keys animate in _armed_fire
-            self._led(st, "confirm")
+        self._led(st, "confirm")
         key = (st["layer"], st["wm"])
         self.run(self.steps_for(st["map"], key, advance=True), key, t0=st["t0"], src=self._src(st))
 
@@ -165,10 +176,11 @@ class Engine:
         """Key down: run the On list. Key up runs the Off list under the same key, so it takes
         over from an On list that is still running (e.g. a fade)."""
         st["phase"] = "held"
-        self._led(st, "confirm")
+        self._led(st, "held")
         self.run(st["map"].get("do") or [], (st["layer"], st["wm"]), t0=st["t0"], src=self._src(st))
 
     def _momentary_end(self, st):
+        self._led(st, "release")
         self.run(st["map"].get("off") or [], (st["layer"], st["wm"]), src=self._src(st))
 
     # --- testing from the UI --------------------------------------------------
@@ -187,9 +199,6 @@ class Engine:
         if m.get("mode") == "momentary":
             self._momentary_start(st)
             asyncio.get_running_loop().call_later(1.0, self._momentary_end, st)
-        elif m.get("hold"):
-            self._led(st, "confirm")
-            self.fire(st)
         else:
             self.fire(st)
 

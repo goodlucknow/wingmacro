@@ -34,8 +34,8 @@ has a **mode** and, unless momentary, an optional **hold to fire**.
 
 | `mode` | Lists | Behaviour |
 |---|---|---|
-| `"single"` (One-shot) | `do` | Runs `do` each time it fires (on release). |
-| `"toggle"` | `do` (On), `off` (Off) | Alternates: the first fire runs On, the next Off. The key keeps its own on/off state, deliberately **not** read from the console, so "this key is on" is always definite. |
+| `"single"` (One-shot) | `do` | Runs `do` on release, after a **cancel window** (`cancel_ms`, default `pad.cancel_ms` 400; a second tap within it cancels; 0 fires at once). Added 2026-10-08. |
+| `"toggle"` | `do` (On), `off` (Off) | Alternates on release (no cancel window unless hold to fire): the first fire runs On, the next Off. The key keeps its own on/off state, deliberately **not** read from the console, so "this key is on" is always definite. |
 | `"momentary"` | `do` (On), `off` (Off) | On runs at key **down**, Off at key **up** (talkback). Off runs under the same key, so it takes over from an On list that is still running (e.g. a fade). If the pad disconnects mid-press, Off still runs. |
 
 - `off` is always written by the user: there is no automatic reverse (decided 2026-10-08; guessing the inverse
@@ -69,11 +69,20 @@ LED feedback for `hold`:
   Example: a toggle whose A side sets green and B side sets red.
 - The colour state belongs to (mapping layer, key), so a key inherited on other layers shows the same colour. State is kept in memory: after an app restart, keys show their own colour and toggles start on A.
 - **Momentary** keys change colours back only through their Off list (e.g. a Key LED action back to the key colour).
-- **Animations** (priority over the colour above): the hold glow while held and the armed flash, plus a **fire animation** when the key fires.
-  Set it with `fire_anim`: `none`, `flash`, or `bloom` (light swells out of the key into its neighbours and shrinks
-  back, 0.8 s; replaced `burst` on 2026-10-08, which is still read as bloom). Hold keys default to flash, others to none.
-  Animations use `hold_colour`; by default the key's own colour (else the pad background) at full brightness.
-  The tap-tempo beat flash runs on tap keys.
+- **Toggle keys** show their state by default: full brightness (the animation colour) while on, their own colour
+  while off. `led` actions in the On/Off lists override this.
+- **Press animations** (priority over the colours above; revised 2026-10-08), all in `hold_colour`, by default the
+  key's own colour (else the pad background) at full brightness:
+  - **Charge** on key down: the key brightens to full, over the hold time on hold-to-fire keys, over 0.2 s on others.
+  - **Armed** (cancel window): a fast strobe.
+  - **Fire animation** (`fire_anim`): `none` (the charge fades back), `flash` (3 flashes), or `bloom` (light swells
+    out of the key into its neighbours and shrinks back, 0.8 s; `burst` is read as bloom). Hold keys default to
+    flash, one-shots and toggles to none.
+  - **Momentary** keys glow at full while held; with `bloom` (their default) the bloom grows and holds at its widest
+    while held, shrinking back on release. `none` = just the key's glow.
+- **Tap-tempo keys** flash on the beat (sharp attack, ~0.1 s decay): the tapped tempo, or else the first slot's
+  `time` read from the console.
+- The `led` action's `pulse` effect breathes at about 0.5 Hz.
 - Brightness is the V of an HSV colour (0–200). In the UI, every colour picker has a brightness slider, so a palette colour can be stored at any brightness.
 - Colours are HSV triples (0–255, as in VialRGB) or palette names: the WING's 12 colours in its order (`steel`, `sky`, `indigo`, `teal`, `green`, `olive`, `yellow`, `orange`, `red`, `coral`, `magenta`, `purple`), plus `white` and `off`, with LED values tuned for the pad (orange = the case/UI amber). The older names `crimson`, `amber`, `cyan` and `blue` are still accepted. The firmware caps brightness at 200.
 - When the layer changes, the app repaints all 16 LEDs with that layer's colours. On exit it restores VialRGB mode 2.
