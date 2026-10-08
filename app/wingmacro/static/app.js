@@ -69,8 +69,57 @@ function h(tag, a, ...kids) {
     else e.setAttribute(k, v === true ? "" : v);
   }
   for (const c of kids.flat(9)) if (c != null && c !== false) e.append(c.nodeType ? c : String(c));
-  return e;
+  return tag === "select" ? dropdown(e) : e;
 }
+
+// In-app dropdown for every <select>: the native one stays (hidden) as the value holder and
+// still fires "change", so call sites are plain selects. Options with value "" are placeholders.
+let ddOpen = null;
+function ddClose() { if (ddOpen) { ddOpen.pop.remove(); ddOpen.btn.classList.remove("open"); ddOpen = null; } }
+function dropdown(sel) {
+  const cur = () => sel.selectedOptions[0];
+  const btn = h("button", { type: "button", class: "ddb " + (sel.className || ""), disabled: sel.disabled },
+    h("span", { class: "ddl" }), h("span", { class: "car" }));
+  const label = () => { const o = cur(); btn.firstChild.textContent = o ? o.textContent : ""; btn.firstChild.classList.toggle("ph", !o || o.value === ""); };
+  label();
+  btn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    if (ddOpen?.btn === btn) return ddClose();
+    ddClose();
+    const items = [];
+    const pop = h("div", { class: "ddpop", role: "listbox", onclick: (e) => e.stopPropagation() });
+    const pick = (o) => { ddClose(); if (sel.value !== o.value) { sel.value = o.value; label(); sel.dispatchEvent(new Event("change", { bubbles: true })); } };
+    const addOpt = (o) => {
+      if (o.value === "" || o.hidden || o.disabled) return;
+      const it = h("div", { class: "it" + (o.selected ? " on" : ""), role: "option", onclick: () => pick(o) }, o.textContent);
+      items.push([it, o]); pop.append(it);
+    };
+    for (const c of sel.children) {
+      if (c.tagName === "OPTGROUP") { pop.append(h("div", { class: "gh" }, c.label)); [...c.children].forEach(addOpt); } else addOpt(c);
+    }
+    document.body.append(pop);
+    const r = btn.getBoundingClientRect(), ph = pop.offsetHeight, below = innerHeight - r.bottom - 8;
+    pop.style.minWidth = r.width + "px";
+    pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8)) + "px";
+    pop.style.top = (ph <= below || below > r.top ? r.bottom + 2 : Math.max(8, r.top - ph - 2)) + "px";
+    let hl = Math.max(0, items.findIndex(([, o]) => o.selected));
+    const mark = () => items.forEach(([it], i) => it.classList.toggle("hl", i === hl));
+    items[hl]?.[0].scrollIntoView({ block: "nearest" });
+    btn.classList.add("open");
+    ddOpen = { btn, pop, key: (e) => {
+      if (e.key === "Escape") ddClose();
+      else if (e.key === "ArrowDown" || e.key === "ArrowUp") { hl = (hl + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length; mark(); items[hl][0].scrollIntoView({ block: "nearest" }); }
+      else if (e.key === "Enter" && items[hl]) pick(items[hl][1]);
+      else return;
+      e.preventDefault();
+    } };
+  });
+  return h("span", { class: "dd" }, sel, btn);
+}
+document.addEventListener("click", ddClose);
+document.addEventListener("keydown", (e) => ddOpen?.key(e));
+addEventListener("resize", ddClose);
+document.addEventListener("scroll", (e) => { if (ddOpen && !ddOpen.pop.contains(e.target)) ddClose(); }, true);
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 const api = async (path, opt) => { const r = await fetch(path, opt); return r.json(); };
@@ -1255,6 +1304,7 @@ function renderKeymapPage() {
 
 // ---------------------------------------------------------------------------- render / nav
 function render() {
+  ddClose();
   const page = $("page");
   const keepScroll = [...page.querySelectorAll(".pbody")].map((e) => e.scrollTop);
   const pageScroll = page.scrollTop;
