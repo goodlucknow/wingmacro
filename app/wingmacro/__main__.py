@@ -1,5 +1,6 @@
 """wingmacro: control a Behringer WING from a DOIO KB16 pad.
 
+  python -m wingmacro tray [...]   # with a tray / menu-bar icon (the default in the packaged apps)
   python -m wingmacro [run] [--config PATH] [--wing IP] [--web-host H] [--web-port N] [--no-pad]
   python -m wingmacro discover
   python -m wingmacro fx SLOT [--wing IP]     # list a slot's parameters as the console reports them
@@ -7,6 +8,7 @@
 import argparse
 import asyncio
 import logging
+import sys
 
 from . import config as C
 from .wing import Wing, discover
@@ -14,7 +16,8 @@ from .wing import Wing, discover
 
 def main():
     ap = argparse.ArgumentParser(prog="wingmacro")
-    ap.add_argument("cmd", nargs="?", default="run", choices=["run", "discover", "fx"])
+    packaged = getattr(sys, "frozen", False)
+    ap.add_argument("cmd", nargs="?", default="tray" if packaged else "run", choices=["run", "tray", "discover", "fx"])
     ap.add_argument("slot", nargs="?", type=int)
     ap.add_argument("--config", default=str(C.default_path()))
     ap.add_argument("--wing", help="console IP (default: config, then discovery)")
@@ -23,6 +26,11 @@ def main():
     ap.add_argument("--no-pad", action="store_true")
     ap.add_argument("-v", "--verbose", action="store_true")
     a = ap.parse_args()
+    if a.cmd == "tray":
+        from . import tray
+        tray.setup_logging(a.config, a.verbose)
+        tray.run(a.config, a.wing, not a.no_pad, a.web_host, a.web_port)
+        return
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 

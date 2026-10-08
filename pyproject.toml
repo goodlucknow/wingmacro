@@ -7,6 +7,8 @@ dependencies = ["aiohttp>=3.9", "hidapi>=0.14"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
+tray = ["pystray>=0.19", "pillow>=10"]  # menu-bar / tray icon (python -m wingmacro tray)
+build = ["pyinstaller>=6"]
 
 [project.scripts]
 wingmacro = "wingmacro.__main__:main"
@@ -19,7 +21,7 @@ build-backend = "setuptools.build_meta"
 where = ["app"]
 
 [tool.setuptools.package-data]
-wingmacro = ["static/*"]
+wingmacro = ["static/*", "static/fonts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["app/tests"]

@@ -6,3 +6,8 @@ docs/*.pdf
 __pycache__/
 .venv/
 *.egg-info/
+
+# packaging
+/dist/
+/build/
+packaging/build/

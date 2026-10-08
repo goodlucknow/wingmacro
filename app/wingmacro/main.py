@@ -241,19 +241,22 @@ class App:
             except Exception:
                 log.exception("event %s", ev)
 
-    async def run(self, web_host, web_port):
+    async def run(self, web_host, web_port, stop=None, ready=None):
+        """Run until SIGINT/SIGTERM or `stop` is set. `ready()` is called once the web UI is up."""
         tasks = [asyncio.create_task(self.wing.run())]
         if self.pad:
             tasks += [asyncio.create_task(self.pad.run()),
                       asyncio.create_task(self._pad_events()),
                       asyncio.create_task(self.leds.run())]
         runner = await start_web(self, web_host, web_port)
-        stop = asyncio.Event()
+        if ready:
+            ready()
+        stop = stop or asyncio.Event()
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:
                 loop.add_signal_handler(sig, stop.set)
-            except NotImplementedError:  # Windows
+            except (NotImplementedError, ValueError, RuntimeError):  # Windows, or not the main thread (tray)
                 pass
         try:
             await stop.wait()

@@ -1,0 +1,78 @@
+# Builds the Windows installer and the macOS disk images. Push a tag like v0.1.0 to publish them
+# as a GitHub release (a tag with a dash, e.g. v0.2.0-beta1, makes a pre-release). "Run workflow"
+# on the Actions page builds them as downloadable artifacts without a release.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: windows-latest, target: windows}
+          - {os: macos-latest, target: macos-arm64}    # Apple silicon
+          - {os: macos-15-intel, target: macos-intel}  # Intel Macs
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Version
+        shell: bash
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          [[ "$GITHUB_REF_TYPE" == tag ]] || v="0.0.0-dev.${GITHUB_RUN_NUMBER}"
+          echo "WINGMACRO_VERSION=$v" >> "$GITHUB_ENV"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[tray,build,dev]"
+      - name: Test
+        run: python -m pytest -q app/tests
+      - name: Build app
+        run: |
+          python packaging/make_icons.py
+          pyinstaller --noconfirm --workpath build --distpath dist packaging/wingmacro.spec
+
+      - name: Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc "/DVersion=$env:WINGMACRO_VERSION" packaging\windows\wingmacro.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: macOS disk image
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p build/dmg && cp -R dist/wingmacro.app build/dmg/ && ln -s /Applications build/dmg/Applications
+          hdiutil create -volname wingmacro -srcfolder build/dmg -ov -format UDZO \
+            "dist/wingmacro-${WINGMACRO_VERSION}-${{ matrix.target }}.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wingmacro-${{ matrix.target }}
+          path: |
+            dist/*-setup.exe
+            dist/*.dmg
+          if-no-files-found: error
+
+  release:
+    if: github.ref_type == 'tag' && !cancelled()
+    needs: build
+    runs-on: ubuntu-latest
+    permissions: {contents: write}
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {path: out, merge-multiple: true}
+      - run: cd out && sha256sum * > SHA256SUMS.txt && ls -l
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
