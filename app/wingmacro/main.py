@@ -44,7 +44,8 @@ class App:
         if path.startswith("/fx/") and path.endswith("/mdl"):
             slot = int(path.split("/")[2])
             self.ctx.fx_models[slot] = value
-            self.ctx.invalidate_fx(slot)
+        if path.endswith("/mdl"):  # a model change replaces the node's parameters
+            self.ctx.invalidate(path.rpartition("/")[0])
 
     def strips(self):
         """Names/colours of every fader-type strip and mute group, from the WING value cache."""

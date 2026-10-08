@@ -5,6 +5,7 @@ from pathlib import Path
 
 from aiohttp import WSMsgType, web
 
+from . import params as P
 from .wing import discover
 
 STATIC = Path(__file__).parent / "static"
@@ -55,6 +56,23 @@ async def start_web(app, host, port):
             {"name": d.name, "longname": d.longname, "type": d.type_name, "unit": d.unit,
              "min": d.min, "max": d.max, "items": d.items, "readonly": d.readonly}
             for d in defs if d.type != 0])
+
+    async def params(req):
+        """Children of a console node, labelled: {nodes: [{name, label}], params: [{...}]}.
+        Fetched fresh (and refreshes the action cache), so model changes show at once."""
+        node = "/" + req.query.get("path", "/").strip("/")
+        defs = await app.wing.defs(node)
+        if defs:
+            app.ctx.node_defs_cache[node] = {d.name: d for d in defs}
+        base = node.rstrip("/")
+        nodes = sorted((d for d in defs if d.type == 0), key=lambda d: P.node_sort_key(d.name, not base))
+        return web.json_response({
+            "path": node, "label": P.node_label(node) if base else "Console",
+            "nodes": [{"name": d.name, "label": P.node_label(f"{base}/{d.name}", d.longname)} for d in nodes],
+            "params": [{"name": d.name, "label": P.param_label(f"{base}/{d.name}", d.longname),
+                        "longname": d.longname, "type": d.type_name, "unit": d.unit, "min": d.min,
+                        "max": d.max, "items": d.items, "readonly": d.readonly}
+                       for d in defs if d.type != 0]})
 
     async def scan(_):
         found = await asyncio.get_running_loop().run_in_executor(None, discover)
@@ -179,7 +197,7 @@ async def start_web(app, host, port):
         web.get("/api/config", get_config), web.put("/api/config", put_config),
         web.get("/api/strips", strips), web.get("/api/pad", pad_keys),
         web.get("/api/fx", fx_list), web.get("/api/fx/{slot}", fx_params),
-        web.get("/api/scan", scan), web.post("/api/console", set_console),
+        web.get("/api/scan", scan), web.get("/api/params", params), web.post("/api/console", set_console),
         web.get("/api/keymap", keymap), web.post("/api/keymap", set_keycode),
         web.post("/api/pad/layer", pad_layer), web.post("/api/test/steps", test_steps), web.post("/api/test/key", test_key), web.get("/api/pad/backup", backup), web.post("/api/pad/restore", restore),
         web.get("/api/vial", vial_get), web.get("/api/vial/unlock", vial_status),

@@ -61,23 +61,42 @@ class Context:
         self.fades = {}  # target -> running fade task
         self.fade_back = {}  # target -> level before its last fade (for "back")
         self.fx_models = {}  # slot -> model name
-        self.fx_defs = {}  # slot -> {param: NodeDef}
+        self.node_defs_cache = {}  # node path -> {child name: NodeDef}
         self.taps = {}  # slots key -> {"t": [press times], "ms": period or None}
         self.led_state = {}  # (mapping layer, key index) -> (colour, effect), set by `led` actions
         self.led_record = None  # during a momentary press: {key: previous state} for restore
         self.on_beat = []  # fn(period_s)
 
+    async def node_defs(self, node):
+        """{name: NodeDef} of a node's children, from the console (cached until invalidated)."""
+        node = "/" + node.strip("/")
+        if node not in self.node_defs_cache:
+            defs = await self.wing.defs(node)
+            if not defs:
+                return {}  # missing node or no connection: don't cache
+            self.node_defs_cache[node] = {d.name: d for d in defs}
+            if "mdl" in self.node_defs_cache[node]:
+                await self.wing.get(node.rstrip("/") + "/mdl")  # learn its hash so model changes arrive as events
+        return self.node_defs_cache[node]
+
+    async def param_def(self, path):
+        node, _, name = ("/" + path.strip("/")).rpartition("/")
+        return (await self.node_defs(node)).get(name)
+
     async def fx_def(self, slot, param):
-        if slot not in self.fx_defs:
-            defs = await self.wing.defs(f"/fx/{slot}")
-            self.fx_defs[slot] = {d.name: d for d in defs}
-        return self.fx_defs[slot].get(param)
+        return await self.param_def(f"/fx/{slot}/{param}")
+
+    def invalidate(self, node=None):
+        """Forget cached definitions of `node` and everything under it (all if None)."""
+        if node is None:
+            self.node_defs_cache.clear()
+            return
+        node = "/" + node.strip("/")
+        for k in [k for k in self.node_defs_cache if k == node or k.startswith(node + "/")]:
+            del self.node_defs_cache[k]
 
     def invalidate_fx(self, slot=None):
-        if slot is None:
-            self.fx_defs.clear()
-        else:
-            self.fx_defs.pop(slot, None)
+        self.invalidate(None if slot is None else f"/fx/{slot}")
 
 
 async def _toggle_bool(ctx, path, op, inverted=False):
@@ -225,23 +244,36 @@ async def a_set(ctx, p, ticks=None):
     await ctx.wing.set(p["path"], p["value"])
 
 
-async def a_fx_set(ctx, p, ticks=None):
-    slot, param = int(p["slot"]), p["param"]
-    d = await ctx.fx_def(slot, param)
-    if d is None:
-        log.info("fx %d has no param %s (model/mode)", slot, param)
+def fx_path(p):
+    return f"/fx/{int(p['slot'])}/{p['param']}"
+
+
+async def a_param_set(ctx, p, ticks=None):
+    """Set any console parameter to a value, coerced to the parameter's type."""
+    path = "/" + p["path"].strip("/")
+    d = await ctx.param_def(path)
+    if d is None or d.readonly:
+        log.info("%s: no writable param (model/mode?)", path)
         return
     v = p["value"]
     if d.type == W.T_INT:
         v = int(v)
     elif d.type in (W.T_LINF, W.T_LOGF, W.T_FADER):
         v = float(v)
-    await ctx.wing.set(f"/fx/{slot}/{param}", v)
+    await ctx.wing.set(path, v)
+
+
+async def a_fx_set(ctx, p, ticks=None):
+    await a_param_set(ctx, dict(p, path=fx_path(p)))
+
+
+async def a_param_cycle(ctx, p, ticks=None):
+    n = ticks if ticks is not None else (-1 if p.get("dir") == "prev" else 1)
+    await _param_step(ctx, p["path"], p, n)
 
 
 async def a_fx_cycle(ctx, p, ticks=None):
-    n = ticks if ticks is not None else (-1 if p.get("dir") == "prev" else 1)
-    await _fx_step(ctx, p, n)
+    await a_param_cycle(ctx, dict(p, path=fx_path(p)), ticks)
 
 
 # --- rotary actions -------------------------------------------------------
@@ -277,17 +309,22 @@ def default_step(d):
     return None
 
 
+async def a_param(ctx, p, ticks):
+    await _param_step(ctx, p["path"], p, ticks)
+
+
 async def a_fx(ctx, p, ticks):
-    await _fx_step(ctx, p, ticks)
+    await _param_step(ctx, fx_path(p), p, ticks)
 
 
-async def _fx_step(ctx, p, ticks):
-    slot, param = int(p["slot"]), p["param"]
-    d = await ctx.fx_def(slot, param)
-    if d is None or d.readonly:
-        log.info("fx %d has no writable param %s (model/mode)", slot, param)
+async def _param_step(ctx, path, p, ticks):
+    """Step any parameter by `ticks`, by its console type: enums cycle, logf is value-proportional,
+    faders keep the -inf floor rules, numbers step by `step` (default by type) within min/max."""
+    path = "/" + path.strip("/")
+    d = await ctx.param_def(path)
+    if d is None or d.readonly or d.type in (W.T_NODE, W.T_STR):
+        log.info("%s: no steppable param (model/mode?)", path)
         return
-    path = f"/fx/{slot}/{param}"
     cur = await ctx.wing.value(path)
     if cur is None:
         return
@@ -341,6 +378,7 @@ def inverse_steps(steps):
 ACTIONS = {
     "mute": a_mute, "fade": a_fade, "mgrp": a_mgrp, "level_set": a_level_set,
     "level": a_level, "gain": a_gain, "fx": a_fx, "fx_cycle": a_fx_cycle, "fx_set": a_fx_set,
+    "param": a_param, "param_cycle": a_param_cycle, "param_set": a_param_set,
     "tap": a_tap, "refresh": a_refresh, "wait": a_wait, "set": a_set, "led": a_led, "macro": a_macro,
 }
-ROTARY = {"level", "gain", "fx", "fx_cycle"}
+ROTARY = {"level", "gain", "fx", "fx_cycle", "param", "param_cycle"}

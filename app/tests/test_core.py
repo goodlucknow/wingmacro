@@ -199,3 +199,39 @@ def test_burst_radiates_from_fired_key():
     far = leds.frame(t0 + 0.55)                     # neighbours have faded; far corner lit, but dimmer
     assert far[4][2] == 0 and 0 < far[15][2] < near[4][2] / 2
     assert leds.frame(t0 + leds.BURST_TIME + 0.1) and not leds.bursts
+
+
+def test_param_labels():
+    from wingmacro.params import param_label, node_label
+    assert param_label("/ch/3/eq/1g", "GAIN 1") == "Band 1 gain"
+    assert param_label("/ch/3/eq/on", "EQ") == "EQ on"
+    assert param_label("/ch/3/send/MX2/on") == "Send on"
+    assert param_label("/fx/2/lc", "LO CUT") == "Lo cut"  # FX: console name, not the strip meaning
+    assert param_label("/ch/1/newthing", "NEW THING L") == "New thing L"
+    assert node_label("/main") == "Mains" and node_label("/ch/1/main") == "Main sends"
+
+
+def test_param_actions_follow_console_defs():
+    from wingmacro.actions import Context, a_param, a_param_cycle, a_param_set
+    from wingmacro.wing import NodeDef, T_LINF, T_ENUM, T_INT
+
+    class FakeWing:
+        def __init__(self): self.v = {"/ch/1/dyn/thr": -10.0, "/ch/1/dyn/det": "PEAK", "/ch/1/dyn/on": 0}
+        async def defs(self, node):
+            assert node == "/ch/1/dyn"
+            return [NodeDef("thr", "THR", 1, T_LINF, "dB", False, -60.0, 0.0),
+                    NodeDef("det", "DETECTOR", 2, T_ENUM, "", False, items=["PEAK", "RMS"]),
+                    NodeDef("on", "DYNAMICS", 3, T_INT, "", False, 0, 1)]
+        async def value(self, p): return self.v.get(p)
+        async def set(self, p, val): self.v[p] = val
+    w = FakeWing(); ctx = Context(w, lambda: {})
+
+    async def go():
+        await a_param(ctx, {"path": "ch/1/dyn/thr"}, 3)            # linf, range >= 10: 0.1 steps
+        await a_param(ctx, {"path": "/ch/1/dyn/thr", "step": 50}, 1)  # clamped to max
+        await a_param_cycle(ctx, {"path": "/ch/1/dyn/det"})
+        await a_param_set(ctx, {"path": "/ch/1/dyn/on", "value": "1"})
+    asyncio.run(go())
+    assert w.v == {"/ch/1/dyn/thr": 0.0, "/ch/1/dyn/det": "RMS", "/ch/1/dyn/on": 1}
+    ctx.invalidate("/ch/1")
+    assert ctx.node_defs_cache == {}
