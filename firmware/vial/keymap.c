@@ -75,9 +75,37 @@ const uint16_t PROGMEM encoder_map[][NUM_ENCODERS][NUM_DIRECTIONS] = {
 #endif
 
 #ifdef OLED_ENABLE
-    // WING logo + layer number (see firmware/tools/gen_oled.py).
+    // WING logo + layer number, or briefly the tapped tempo (F0 05). Glyphs: firmware/tools/gen_oled.py.
+    static uint16_t bpm_x10   = 0;
+    static uint32_t bpm_until = 0;
+
+    static uint8_t bpm_put(uint8_t *buf, uint8_t x, uint8_t g) {
+        for (uint8_t c = 0; c < bpm_glyph_w[g] && x < 128; c++, x++)
+            for (uint8_t page = 0; page < 4; page++)
+                buf[page * 128 + x] = pgm_read_byte(&bpm_glyph_data[(bpm_glyph_col[g] + c) * 4 + page]);
+        return x;
+    }
+
+    static void bpm_draw(void) {
+        static uint8_t buf[512];
+        memset(buf, 0, sizeof(buf));
+        uint16_t whole = bpm_x10 / 10;
+        uint8_t  digits[3], n = 0, x = 0;
+        do { digits[n++] = whole % 10; whole /= 10; } while (whole && n < 3);
+        while (n) x = bpm_put(buf, x, digits[--n]);
+        x = bpm_put(buf, x, 10);              /* '.' */
+        x = bpm_put(buf, x, bpm_x10 % 10);
+        bpm_put(buf, x + 3, 11);              /* "BPM" */
+        oled_write_raw((const char *)buf, sizeof(buf));  /* only changed bytes are re-sent */
+    }
+
     bool oled_task_user(void) {
-        oled_write_raw_P(oled_frames[get_highest_layer(layer_state) & 3], sizeof(oled_frames[0]));
+        if (bpm_until && !timer_expired32(timer_read32(), bpm_until)) {
+            bpm_draw();
+        } else {
+            bpm_until = 0;
+            oled_write_raw_P(oled_frames[get_highest_layer(layer_state) & 3], sizeof(oled_frames[0]));
+        }
         return false;
     }
 #endif
@@ -88,13 +116,15 @@ const uint16_t PROGMEM encoder_map[][NUM_ENCODERS][NUM_DIRECTIONS] = {
  *                reply: F0 01 <proto> <layer> <layer_state lo> <layer_state hi>
  *   F0 02        get state (no subscribe): same reply layout
  *   F0 03        unsubscribe
+ *   F0 04 <l>    switch to layer l (like TO)
+ *   F0 05 <bpm*10 lo> <hi> <tenths of a second>   show the tempo on the OLED, then the logo again (proto 3)
  * Pad -> host (unsolicited, only while subscribed):
  *   F1 01 <id> <pressed> <layer> <row> <col> <seq>   WMxx press/release
  *   F1 02 <layer> <seq>                              layer changed
  * Encoder ticks report press only (row KEYLOC_ENCODER_CW = 253, CCW = 252,
  * col = encoder index).
  */
-#define WM_PROTO 2
+#define WM_PROTO 3
 #define WM_SUBSCRIBE_MS 3000
 #define WM_CMD 0xF0
 #define WM_EVT 0xF1
@@ -140,6 +170,15 @@ void raw_hid_receive_kb(uint8_t *data, uint8_t length) {
             break;
         case 0x04: /* set layer (like TO): F0 04 <layer> */
             if (data[2] < 4) layer_move(data[2]);
+            wm_fill_state(data);
+            break;
+        case 0x05: /* show tempo: F0 05 <bpm*10 lo> <hi> <tenths of a second> */
+#ifdef OLED_ENABLE
+            bpm_x10   = data[2] | (data[3] << 8);
+            bpm_until = timer_read32() + data[4] * 100u;
+            if (!bpm_until) bpm_until = 1;
+            oled_on();                       /* wake it if it timed out */
+#endif
             wm_fill_state(data);
             break;
         default:

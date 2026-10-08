@@ -25,6 +25,7 @@ class App:
         self.wing = Wing(ip)
         self.pad = Pad() if use_pad else None
         self.ctx = Context(self.wing, lambda: self.cfg)
+        self.ctx.on_beat.append(self._show_bpm)
         self.leds = Leds(lambda: self.cfg, self.pad, self.wing, self.ctx) if self.pad else None
         self.engine = Engine(lambda: self.cfg, self.ctx, self.leds)
         if self.leds:
@@ -93,6 +94,11 @@ class App:
             await loop.run_in_executor(None, p.set_key, int(body["layer"]), int(body["row"]), int(body["col"]), kc)
 
     # --- Vial extras (unlock, keystroke macros, tap dance, combos) ------------------
+
+    def _show_bpm(self, period):
+        """After a tap sets the tempo: show it on the pad's OLED for 2 s."""
+        if self.pad and self.pad.connected and period > 0:
+            asyncio.get_running_loop().run_in_executor(None, self.pad.show_bpm, 60 / period, 2.0)
 
     async def _pad_call(self, fn, *a):
         if not (self.pad and self.pad.connected):

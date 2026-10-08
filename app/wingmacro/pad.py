@@ -203,6 +203,13 @@ class Pad:
             raise PadError("pad firmware is too old to set the layer (reflash needed)")
         self.cmd(0xF0, 0x04, layer)
 
+    def show_bpm(self, bpm, secs=2.0):
+        """Show a tempo on the OLED for `secs`, then the logo again (firmware WM_PROTO >= 3; older: no-op)."""
+        if not self.connected or self.proto < 3:
+            return
+        v = max(0, min(9999, round(bpm * 10)))
+        self.send(0xF0, 0x05, v & 0xFF, v >> 8, max(1, min(255, round(secs * 10))))
+
     def unsubscribe(self):
         self.send(0xF0, 0x03)
 

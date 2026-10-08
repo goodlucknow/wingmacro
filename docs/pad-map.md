@@ -51,6 +51,7 @@ Host → pad (reply echoes the request id, like VIA):
 | `F0 02` | get state (doesn't subscribe) | same as above |
 | `F0 03` | unsubscribe | — |
 | `F0 04 <layer>` | switch to layer 0–3 (like `TO`); a layer event follows. Proto ≥ 2 | same as `F0 01` |
+| `F0 05 <bpm×10 lo> <hi> <tenths>` | show a tempo on the OLED (e.g. 120.5 BPM) for that long, then the logo again; wakes the OLED. Proto ≥ 3 | same as `F0 01` |
 
 Pad → host, unsolicited, **only while subscribed** (so it never blocks when nobody listens):
 
@@ -80,3 +81,5 @@ Firmware default: solid HSV 22/255/47 (matches the case). Brightness capped at 2
 
 WING logo plus the layer number (1–4, i.e. firmware layer + 1) shown dark on a bright box, all
 left-aligned because the case hides the right edge. Blanks after 30 min idle.
+After a tap tempo the app shows the tempo for 2 s (`F0 05`): big digits plus a small "BPM", composed by the
+firmware from glyphs generated with the logo frames (`firmware/tools/gen_oled.py`).

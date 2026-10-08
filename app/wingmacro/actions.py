@@ -196,6 +196,8 @@ async def a_tap(ctx, p, ticks=None):
         return
     period = (st["t"][-1] - st["t"][0]) / (len(st["t"]) - 1)
     st["ms"] = period * 1000
+    for cb in ctx.on_beat:
+        cb(period)
     for slot in tap_key(p):
         d = await ctx.fx_def(slot, "time")
         if d is None or d.unit != "ms" or d.readonly:

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Generate firmware/vial/oled_frames.h: 128x32 OLED frames, one per layer.
+"""Generate firmware/vial/oled_frames.h: 128x32 OLED frames, one per layer, plus the BPM glyphs.
 
 Each frame (left-aligned; the case hides the right edge) = WING logo + layer number (1-4) shown dark on a bright
-rounded box on the right.
+rounded box on the right. The BPM screen (shown briefly after a tap tempo) is composed by the firmware from
+big digit glyphs and a small "BPM" label, each stored column by column, 4 bytes (pages) per column.
 
 Usage: .venv/bin/python firmware/tools/gen_oled.py [--preview]
 Needs Pillow and DejaVuSans-Bold.ttf.
@@ -20,6 +21,9 @@ GAP = 4                          # space between logo and layer box
 BOX_W, BOX_H, BOX_R = 24, 30, 3  # layer-number box size and corner radius
 DIGIT_PX = 24                    # digit font size
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+BPM_PX = 31                      # BPM digit font size (digits ~23 px tall)
+BPM_LABEL_PX = 11
+GLYPHS = "0123456789."           # index 10 = '.', 11 = the "BPM" label
 OUT = os.path.join(os.path.dirname(__file__), "..", "vial", "oled_frames.h")
 
 
@@ -50,6 +54,50 @@ def frame(layer):
     return img
 
 
+def glyph(text, px, spacing):
+    """1-bit 32 px tall image of `text`, cropped to its ink plus `spacing` columns. Digits share one
+    baseline, centred vertically; the label sits on the digits' baseline."""
+    font = ImageFont.truetype(FONT, px)
+    big = ImageFont.truetype(FONT, BPM_PX)
+    probe = ImageDraw.Draw(Image.new("1", (1, 1)))
+    _, dt, _, db = probe.textbbox((0, 0), "0", font=big)      # digit ink top/bottom at BPM_PX
+    y_base = (H - (db - dt)) // 2 - dt                        # y offset that centres the digits
+    img = Image.new("1", (64, H), 0)
+    d = ImageDraw.Draw(img)
+    if px == BPM_PX:
+        d.text((0, y_base), text, font=font, fill=1)
+    else:  # label: bottom aligned with the digits' bottom
+        _, lt, _, lb = d.textbbox((0, 0), text, font=font)
+        d.text((0, y_base + db - lb), text, font=font, fill=1)
+    l, _, r, _ = img.getbbox()
+    out = Image.new("1", (r - l + spacing, H), 0)
+    out.paste(img.crop((l, 0, r, H)), (0, 0))
+    return out
+
+
+def glyph_columns(img):
+    px = img.load()
+    cols = []
+    for x in range(img.width):
+        for page in range(H // 8):
+            cols.append(sum((1 << bit) for bit in range(8) if px[x, page * 8 + bit]))
+    return cols
+
+
+def bpm_glyphs():
+    return [glyph(c, BPM_PX, 2) for c in GLYPHS] + [glyph("BPM", BPM_LABEL_PX, 0)]
+
+
+def bpm_preview(text, glyphs):
+    img = Image.new("1", (W, H), 0)
+    x = 0
+    for c in text:
+        g = glyphs[GLYPHS.index(c)]
+        img.paste(g, (x, 0)); x += g.width
+    img.paste(glyphs[-1], (x + 3, 0))
+    return img
+
+
 def to_pages(img):
     """SSD1306 page layout: 4 pages of 128 columns, LSB = top pixel."""
     px = img.load()
@@ -62,9 +110,10 @@ def to_pages(img):
 
 def main():
     frames = [frame(l) for l in range(4)]
+    glyphs = bpm_glyphs()
     if "--preview" in sys.argv:
-        for l, f in enumerate(frames):
-            print(f"layer {l}")
+        for l, f in enumerate(frames + [bpm_preview("120.5", glyphs), bpm_preview("88.0", glyphs)]):
+            print(f"frame {l}")
             px = f.load()
             for y in range(H):
                 print("".join("#" if px[x, y] else "." for x in range(W)))
@@ -81,6 +130,17 @@ def main():
         for i in range(0, len(b), 16):
             lines.append("        " + ", ".join(f"0x{v:02x}" for v in b[i : i + 16]) + ",")
         lines.append("    },")
+    lines.append("};")
+    data, offs = [], []
+    for g in glyphs:
+        offs.append(len(data) // 4)
+        data += glyph_columns(g)
+    lines += ["", "// BPM screen glyphs: '0'-'9', '.', then the \"BPM\" label. Column-major, 4 bytes (pages) per column.",
+              f"static const uint16_t bpm_glyph_col[{len(glyphs)}] = {{{', '.join(map(str, offs))}}};",
+              f"static const uint8_t bpm_glyph_w[{len(glyphs)}] = {{{', '.join(str(g.width) for g in glyphs)}}};",
+              f"static const uint8_t PROGMEM bpm_glyph_data[{len(data)}] = {{"]
+    for i in range(0, len(data), 16):
+        lines.append("    " + ", ".join(f"0x{v:02x}" for v in data[i : i + 16]) + ",")
     lines.append("};")
     with open(OUT, "w") as fh:
         fh.write("\n".join(lines) + "\n")
