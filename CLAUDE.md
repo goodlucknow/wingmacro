@@ -122,15 +122,15 @@ CLAUDE.md
   - The app drives LEDs through VialRGB direct mode: the `0x07 0x41` command sets the mode, and `0x07 0x42` sets each LED's HSV. Tested on hardware 2026-10-07. In direct mode the app paints every LED, including the background colour, which is configurable and defaults to the case colour (HSV 22/255/47). The firmware caps brightness at 200.
   - Each key's LED has a background colour and state colours bound to WING state (e.g. green/red for a toggle), plus transient effects (flashing during a hold, pulsing on tap tempo).
   - The mode is set without saving to the pad's memory (`noeeprom`). On exit the app switches back to solid colour (VialRGB mode 2), and a power cycle also restores the solid colour.
-- **Trigger modes per mapping** (revised 2026-10-07, see `docs/config-model.md`): one per key: `press` or `hold` (fire on release; a tap right after a hold's release cancels it) or `momentary` (on key down, restored on release, for talkback; added 2026-10-07). Originally: on press, on release, or **press-and-hold for N ms**, which acts as a safety on risky macros. While the key is held, its LED shows progress, then flashes to confirm. Releasing early cancels. The app times this from note-on and note-off.
+- **Key modes (revised 2026-10-08, config v5, see `docs/config-model.md`)**: One-shot, Toggle (On / Off on alternate presses) or Momentary (On at key down, Off at key up), every Off list written by the user. One-shot and Toggle can add **hold to fire** (hold N ms, LED shows progress, release arms it, a tap within the cancel window cancels), the safety for risky macros.
 
 ### Action / function library (from the previous app — rebuild these as macro actions)
 
 - Buttons: mute, fade (with time), mute group (1–8), tap tempo, connect/refresh.
-- Rotaries: fader level for any fader type, send level (channel → bus), FX parameter (slot + parameter, picked from a list of the FX currently loaded).
+- Rotaries: fader level for any fader type, send level (channel → bus), any console parameter including FX (picked from the console's tree).
 - The config UI shows only the fields that apply to the chosen action.
 - Connect/refresh polls state and scans the FX slots.
-- **Parameter actions (2026-10-08)**: `param` / `param_cycle` / `param_set` reach any console parameter. The picker browses the console's own tree (`/api/params`, from `0xdd`): strip → group → parameter, plus FX slots and an "All (advanced)" tab. Readable names live in `app/wingmacro/params.py`, falling back to the console's long names, so new firmware params appear without code. Add a name there only for polish. Definitions are cached per node and dropped when that node's `mdl` changes.
+- **Parameter actions (2026-10-08)**: `param` (knob: steps any parameter) and `param_set` (key: a value, or Increase/Decrease = next/previous option, stop or wrap at the ends) reach any console parameter; they replaced the FX and cycle actions. The picker browses the console's own tree (`/api/params`, from `0xdd`): strip → group → parameter, plus FX slots and an "All (advanced)" tab. Readable names live in `app/wingmacro/params.py`, falling back to the console's long names, so new firmware params appear without code. Add a name there only for polish. Definitions are cached per node and dropped when that node's `mdl` changes.
 
 ## Open items / next priorities
 

@@ -27,24 +27,26 @@ Firmware details are in `pad-map.md`. This file defines what the app does with t
 - **Encoder turns** bind to *rotary* actions only, with no waits. Every rotary step in the list gets the same
   accelerated tick count, so one knob can move several faders together.
 
-## Trigger modes (buttons)
+## Key modes (buttons)
 
-A key has **one** trigger: `press` or `hold` (both **fire on release**), or `momentary` (acts on key **down**).
+Decided 2026-10-08 (config v5; replaces `trigger` press/hold/momentary + `toggle`). A key (or a knob's push)
+has a **mode** and, unless momentary, an optional **hold to fire**.
 
-| Trigger | Behaviour |
-|---|---|
-| `"press"` | Fires on release. |
-| `"hold"`, `hold_ms` (default 800) | Must be held for `hold_ms`; releasing earlier does nothing. Once the hold time is reached, the release **arms** the key. Then any press of the same key within `cancel_ms` (global `pad.cancel_ms`, default 400, settable in the web UI; can be overridden per key) **cancels** it, so a tap or double tap works. If nothing is pressed in that time, it fires. The firing is delayed by `cancel_ms`, which is accepted. |
+| `mode` | Lists | Behaviour |
+|---|---|---|
+| `"single"` (One-shot) | `do` | Runs `do` each time it fires (on release). |
+| `"toggle"` | `do` (On), `off` (Off) | Alternates: the first fire runs On, the next Off. The key keeps its own on/off state, deliberately **not** read from the console, so "this key is on" is always definite. |
+| `"momentary"` | `do` (On), `off` (Off) | On runs at key **down**, Off at key **up** (talkback). Off runs under the same key, so it takes over from an On list that is still running (e.g. a fade). If the pad disconnects mid-press, Off still runs. |
 
-| `"momentary"` | Runs on key down and stays active while held (talkback). On release the macro is stopped, every parameter it wrote is restored to its value from before the press, and fades go back to where they started. A `toggle` uses its A side. |
-
-**Behaviour** (decided 2026-10-07; replaces the old Actions / Macro / Toggle A/B modes):
-- **Single**: `do` is the list of actions run on each fire.
-- **Toggle** (`"toggle": true`): the key keeps its own on/off state, deliberately **not** read from the console,
-  so "this key is on" is always definite. The first press runs `do` (On), the next runs Off, and so on.
-  - Off is `"off": [...]`, always written by hand (decided 2026-10-08: no automatic reverse; guessing the
-    inverse of a macro list was a recipe for surprises). Config v4 wrote any old automatic Off out as real steps.
-- Momentary keys are always Single: their release restores everything.
+- `off` is always written by the user: there is no automatic reverse (decided 2026-10-08; guessing the inverse
+  of a macro list was a recipe for surprises). Upgrading wrote any old automatic Off or momentary restore out as
+  real steps.
+- **Hold to fire** (`"hold": true`, `hold_ms` default 800; one-shot and toggle only) is a safety for risky
+  actions. The key must be held for `hold_ms`; releasing earlier does nothing. Once the hold time is reached, the
+  release **arms** the key. Then any press of the same key within `cancel_ms` (global `pad.cancel_ms`, default 400,
+  overridable per key) **cancels** it, so a tap or double tap works. If nothing is pressed in that time, it fires
+  (the firing is delayed by `cancel_ms`, which is accepted).
+- Knob pushes offer One-shot and Toggle (no momentary or hold: the push is shared with push-and-turn).
 - Actions **set** a state (`op: on|off`, fade to a level); they never flip it. `op: toggle` is still accepted for
   old configs.
 - Shared **macros** (Macros page) are reusable action lists. A list runs one with `{"do": "macro", "name": "..."}`
@@ -91,12 +93,8 @@ Every fader-type target follows the same floor rules.
 | `level` | `target`, `step` (dB, default 0.1) | rotary | Stepping up from −∞ jumps to −89.53 dB. Stepping down past −90 dB snaps to −∞. Reads the value back. |
 | `gain` | `target` (`ch/N`), `step` (dB, default 0.5) | rotary | Input gain of the channel's source (`/ch/N/in/set/$g` → `/io/in/...`). The path needs checking on hardware. |
 | `level_set` | `target`, `db` (number or `"-inf"`) | button | |
-| `fx` | `slot`, `param`, `step?` | rotary | The default step depends on the type (int 1, linf 0.01/0.1, fader 0.1 dB). logf steps are proportional to the value, about 1% by default. Skipped silently if the parameter isn't present in the current mode. |
-| `fx_cycle` | `slot`, `param`, `dir: next\|prev` | button | For `str` params. Can also be used as a rotary. |
-| `fx_set` | `slot`, `param`, `value` | button | |
-| `param` | `path`, `step?`, `plabel?` | rotary | Any console parameter (e.g. `/ch/3/send/MX1/lvl`). Steps by its console type, same rules as `fx`. `plabel` is the display name saved by the picker. |
-| `param_cycle` | `path`, `dir: next\|prev`, `plabel?` | button/rotary | Cycles an enum (or small int) parameter. |
-| `param_set` | `path`, `value`, `plabel?` | button | Sets any parameter, coerced to its console type. |
+| `param` | `path`, `step?`, `plabel?` | rotary | Any console parameter (e.g. `/ch/3/send/MX1/lvl`, `/fx/3/time`), stepped by its console type: int 1, linf 0.01 (range < 10) or 0.1, fader 0.1 dB with the floor rules, logf proportional to the value, option lists one option per tick (wrapping round). `plabel` is the display name saved by the picker. |
+| `param_set` | `path`, `value` or `op: inc\|dec`, `step?`, `wrap?`, `plabel?` | button | Sets any parameter to a value (coerced to its type), or one step up/down: the next/previous option for lists. Stops at the ends unless `wrap`. |
 | `tap` | `slots` (list), `window?` (default 4) | button | Tap time is taken at the key press. Moving average of the last `window` intervals; a gap of 2 s or more starts over. Writes the beat period as-is to `/fx/N/time` of each listed slot. No multiplier: the delay's own `fact` (subdivision) stays on the console and can be mapped like any param. Slots without a `time` param in ms (e.g. BBD-DL) are skipped. Tap state is per slot set; the WING has no global tempo. |
 | `refresh` | — | button | Reconnects if needed, polls state and rescans the FX slots (and so the delays). |
 | `led` | `colour`, `effect?`, `layer?` + `key?` | button | Sets a key's LED (see LED rules). |
@@ -112,7 +110,7 @@ At slow speeds each tick is exactly one step. Faster turning multiplies the *num
 
 ```json
 {
-  "version": 4,
+  "version": 5,
   "console": { "ip": "192.168.1.62", "discover": true },
   "pad": { "background": [22, 255, 47], "cancel_ms": 400, "hold_ms": 800 },
   "macros": {
@@ -125,29 +123,31 @@ At slow speeds each tick is exactly one step. Faster turning multiplies the *num
   "layers": {
     "0": {
       "buttons": {
-        "1":  { "trigger": "press", "toggle": true, "do": [{ "do": "mute", "target": "ch/1", "op": "on" }] },
-        "2":  { "trigger": "press", "toggle": true, "do": [
+        "1":  { "mode": "toggle", "do": [{ "do": "mute", "target": "ch/1", "op": "on" }],
+                "off": [{ "do": "mute", "target": "ch/1", "op": "off" }] },
+        "2":  { "mode": "single", "do": [
                   { "do": "fade", "target": "main/1", "db": "-inf", "time": 5 },
-                  { "do": "mute", "target": "main/1", "op": "on" },
-                  { "do": "led", "colour": "red" } ] },
-        "4":  { "trigger": "hold", "hold_ms": 800, "toggle": true, "background": [0, 255, 40],
+                  { "do": "mute", "target": "main/1", "op": "on" } ] },
+        "4":  { "mode": "toggle", "hold": true, "hold_ms": 800, "background": [0, 255, 40],
                 "fire_anim": "burst", "hold_colour": "red",
                 "do":  [{ "do": "macro", "name": "Band out" }, { "do": "led", "colour": "red" }],
                 "off": [{ "do": "mgrp", "n": 2, "op": "off" }, { "do": "mute", "target": "dca/1", "op": "off" },
                         { "do": "fade", "target": "dca/1", "db": 0, "time": 10 }, { "do": "led", "colour": "base" }] },
-        "6":  { "trigger": "momentary", "name": "Talkback", "do": [{ "do": "mute", "target": "ch/40", "op": "off" }] },
-        "13": { "trigger": "press", "do": [{ "do": "tap", "slots": [3, 4] }] },
-        "16": { "trigger": "press", "do": [{ "do": "refresh" }] }
+        "6":  { "mode": "momentary", "name": "Talkback", "do": [{ "do": "mute", "target": "ch/40", "op": "off" }],
+                "off": [{ "do": "mute", "target": "ch/40", "op": "on" }] },
+        "13": { "mode": "single", "do": [{ "do": "tap", "slots": [3, 4] }] },
+        "16": { "mode": "single", "do": [{ "do": "refresh" }] }
       },
       "encoders": {
         "left":  { "turn": [{ "do": "level", "target": "main/1" }],
                    "push_turn": [{ "do": "level", "target": "ch/1/send/3" }],
                    "push": { "do": [{ "do": "level_set", "target": "main/1", "db": 0 }] } },
-        "right": { "turn": [{ "do": "fx", "slot": 3, "param": "time" }], "accel": "normal" }
+        "right": { "turn": [{ "do": "param", "path": "/fx/3/time" }], "accel": "normal" }
       }
     },
     "1": {
-      "buttons": { "1": { "trigger": "press", "toggle": true, "do": [{ "do": "mute", "target": "ch/9", "op": "on" }] } }
+      "buttons": { "1": { "mode": "toggle", "do": [{ "do": "mute", "target": "ch/9", "op": "on" }],
+                         "off": [{ "do": "mute", "target": "ch/9", "op": "off" }] } }
     }
   }
 }

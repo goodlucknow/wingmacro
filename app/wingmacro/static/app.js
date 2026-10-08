@@ -4,7 +4,7 @@
 
 // ---------------------------------------------------------------------------- state
 const S = {
-  cfg: null, strips: null, pad: null, fx: {}, fxParams: {}, pnodes: {}, live: null,
+  cfg: null, strips: null, pad: null, fx: {}, pnodes: {}, live: null,
   page: "pad", layer: 0, follow: true, selectOnPress: true,
   sel: null,            // {kind:"key", idx} | {kind:"knob", knob}
   macroSel: null, consoles: null, scanning: false,
@@ -43,12 +43,8 @@ const ACT = {
   level_set: { label: "Set level", g: "Levels", f: [["target", "target"], ["db", "db"]] },
   level:     { label: "Level", g: "Levels", rot: true, f: [["target", "target"], ["step", "num", { unit: "dB", ph: "0.1", step: 0.1, min: 0 }]] },
   gain:      { label: "Input gain", g: "Levels", rot: true, f: [["target", "targetch"], ["step", "num", { unit: "dB", ph: "0.5", step: 0.5, min: 0 }]] },
-  fx:        { label: "FX parameter", g: "Effects", rot: true, f: [["slot", "fxslot"], ["param", "fxparam"], ["step", "num", { ph: "auto", step: 0.01, min: 0 }]] },
-  fx_cycle:  { label: "FX option (cycle)", g: "Effects", rot: true, both: true, f: [["slot", "fxslot"], ["param", "fxenum"], ["dir", "dir"]] },
-  fx_set:    { label: "Set FX parameter", g: "Effects", f: [["slot", "fxslot"], ["param", "fxparam"], ["value", "fxvalue"]] },
   param:     { label: "Parameter", g: "Parameters", rot: true, f: [["path", "param"], ["step", "num", { ph: "auto", step: 0.01, min: 0 }]] },
-  param_cycle: { label: "Parameter option (cycle)", g: "Parameters", rot: true, both: true, f: [["path", "paramenum"], ["dir", "dir"]] },
-  param_set: { label: "Set parameter", g: "Parameters", f: [["path", "param"], ["value", "paramvalue"]] },
+  param_set: { label: "Set parameter", g: "Parameters", f: [["path", "param"], ["op", "paramop"]] },
   tap:       { label: "Tap tempo", g: "Effects", f: [["slots", "fxslots"], ["window", "num", { ph: "4", step: 1, min: 1 }]] },
   macro:     { label: "Run macro", g: "Macros", f: [["name", "macro"]] },
   led:       { label: "Key LED", g: "Pad", f: [["colour", "ledcolour"], ["effect", "effect"], ["key", "ledtarget"]] },
@@ -285,21 +281,20 @@ function summary(m) {                       // -> {cap, col, name, act}
       case "mgrp": r = { cap: `MGRP.${st.n}`, name: stripInfo("mgrp", st.n).name || `Mute grp ${st.n}`, act: "Mute group" }; break;
       case "level_set": r = { cap: t.cap, col: t.col, name: t.name, act: `Set ${st.db === "-inf" ? "−∞" : (st.db ?? 0) + " dB"}` }; break;
       case "tap": r = { cap: "FX." + (st.slots || []).join(","), name: "Tap", act: "Tap tempo" }; break;
-      case "param": case "param_cycle": case "param_set": { const L = paramLabel(st.path, st.plabel); r = { cap: L.cap, col: L.col, name: L.name, act: L.param || ACT[st.do].label }; break; }
-      case "fx_set": case "fx_cycle": r = { cap: `FX.${st.slot}`, name: st.param || "", act: ACT[st.do].label }; break;
+      case "param": case "param_set": { const L = paramLabel(st.path, st.plabel); r = { cap: L.cap, col: L.col, name: L.name, act: L.param || ACT[st.do].label }; break; }
       default: r = { cap: "", name: ACT[st.do]?.label || st.do, act: "" };
     }
   }
-  if (m.toggle) r.act = "Toggle · " + r.act;
+  const pre = (p) => { r.act = r.act ? `${p} · ${r.act}` : p; };
+  if (m.mode === "toggle") pre("Toggle");
   if (m.name) r.name = m.name;
-  if (m.trigger === "hold") r.act = "Hold · " + r.act;
-  if (m.trigger === "momentary") r.act = "While held · " + r.act;
+  if (m.hold) pre("Hold");
+  if (m.mode === "momentary") pre("While held");
   return r;
 }
 function rotSummary(steps) {
   const st = steps?.[0]; if (!st) return "";
   if (st.do?.startsWith("param")) { const L = paramLabel(st.path, st.plabel); return `${L.name} ${L.param}`; }
-  if (st.do === "fx" || st.do === "fx_cycle") return `FX${st.slot} ${st.param || ""}`;
   if (st.target) return `${ACT[st.do].label} ${targetLabel(st.target).name}`;
   return ACT[st.do]?.label || "";
 }
@@ -364,7 +359,7 @@ function renderPad() {
       h("span", { class: "nm" }, m ? s.name : "—"),
       h("span", { class: "act" }, s.act),
       m && from !== S.layer && h("span", { class: "badge" }, `L${from + 1}`),
-      m?.toggle && h("span", { class: "tstate" + (live?.toggles?.[`${from}/${wm}`] ? " on" : "") }, live?.toggles?.[`${from}/${wm}`] ? "ON" : "OFF"),
+      m?.mode === "toggle" && h("span", { class: "tstate" + (live?.toggles?.[`${from}/${wm}`] ? " on" : "") }, live?.toggles?.[`${from}/${wm}`] ? "ON" : "OFF"),
       h("span", { class: "wm" }, String(wm).padStart(2, "0")));
   }));
 
@@ -429,31 +424,37 @@ function keyEditor(idx) {
   const { m, from } = lookup("buttons", wm, S.layer);
   if (m && from !== S.layer) return [head(), inheritBar("buttons", wm, from, `WM${wm}`)];
   if (!m) return [head(), h("div", { class: "pbody" }, h("p", { class: "muted" }, "Not mapped on this layer."),
-    h("button", { class: "btn amber", onclick: () => { layerCfg(S.layer, true).buttons[wm] = { trigger: "press", do: [] }; commit(); } }, "Create mapping"))];
+    h("button", { class: "btn amber", onclick: () => { layerCfg(S.layer, true).buttons[wm] = { mode: "single", do: [] }; commit(); } }, "Create mapping"))];
 
   const pad = S.cfg.pad || {};
   S.testSrc = [from, idx];                    // LED actions run from the editor light this key
   const body = h("div", { class: "pbody" },
     sect("Name", h("input", { type: "text", value: m.name || "", placeholder: summary({ ...m, name: "" }).name || "Label shown on the pad view",
       oninput: (e) => { m.name = e.target.value || undefined; commit(false); renderTop(); }, onchange: () => render() })),
-    sect("Trigger",
+    sect("Mode",
       h("div", { class: "row" },
-        seg([["momentary", "Momentary"], ["press", "Press"], ["hold", "Hold"]], m.trigger || "press", (v) => {
-          m.trigger = v; if (v === "momentary") delete m.toggle; commit(); }, "fixed"),
+        seg([["single", "One-shot"], ["toggle", "Toggle"], ["momentary", "Momentary"]], m.mode || "single", (v) => {
+          m.mode = v;
+          if (v === "single") delete m.off; else m.off ||= [];
+          if (v === "momentary") { delete m.hold; delete m.hold_ms; delete m.cancel_ms; }
+          commit(); }, "fixed")),
+      h("p", { class: "hint" }, {
+        toggle: "Each press alternates: the first runs On, the next runs Off. The key remembers which is next.",
+        momentary: "On runs when the key goes down, Off when it comes back up (e.g. talkback).",
+      }[m.mode] || "Runs its actions each time it fires."),
+      m.mode !== "momentary" && h("div", { class: "row", style: "margin-top:10px" },
+        field("Hold to fire", seg([[false, "Off"], [true, "On"]], !!m.hold, (v) => { if (v) m.hold = true; else { delete m.hold; delete m.hold_ms; delete m.cancel_ms; } commit(); }, "sm")),
         // always laid out, hidden unless Hold, so the row never shifts
-        h("div", { class: "row", style: m.trigger === "hold" ? "" : "visibility:hidden" },
+        h("div", { class: "row", style: m.hold ? "" : "visibility:hidden" },
           field("Hold time", h("span", {}, numInput(m.hold_ms, (v) => { m.hold_ms = v; }, { ph: pad.hold_ms ?? 800, step: 50, min: 100 }), h("span", { class: "unit" }, "ms"))),
           field("Cancel window", h("span", {}, numInput(m.cancel_ms, (v) => { m.cancel_ms = v; }, { ph: pad.cancel_ms ?? 400, step: 50, min: 0 }), h("span", { class: "unit" }, "ms"))))),
-      h("p", { class: "hint", style: "min-height:2.6em" }, {
-        hold: "Hold until the key lights fully, then release. It flashes while armed; tap it again within the cancel window to cancel.",
-        momentary: "Acts the moment the key goes down and stays active while held (e.g. talkback). On release, everything it changed is put back and fades go back to where they started.",
-      }[m.trigger] || "Fires when the key is released.")),
-    sect("Actions", actionsEditor(m, m.trigger === "momentary")),
+      m.hold && m.mode !== "momentary" && h("p", { class: "hint" }, "A safety for risky actions: hold until the key lights fully, then release. It flashes while armed; tap it again within the cancel window to cancel.")),
+    sect("Actions", actionsEditor(m)),
     sect("LED", h("p", { class: "hint" }, "Key colour is the key's resting colour. Macros change it with the Key LED action, e.g. a dim red here and full red in the macro."),
       field("Key colour", colourPicker(m.background, (v) => { m.background = v; }, { allowNone: true, noneLabel: "Pad background" })),
       h("div", { style: "height:10px" }),
       field("Fire animation", seg([["none", "None"], ["flash", "Flash"], ["burst", "Flash + burst"]],
-        m.fire_anim || (m.trigger === "hold" ? "flash" : "none"), (v) => { m.fire_anim = v; commit(); }, "sm")),
+        m.fire_anim || (m.hold ? "flash" : "none"), (v) => { m.fire_anim = v; commit(); }, "sm")),
       h("p", { class: "hint" }, "Plays when the key fires. Burst sends a ring of light out across the pad."),
       field("Animation colour", colourPicker(m.hold_colour, (v) => { m.hold_colour = v; }, { allowNone: true, noneLabel: "White (default)" })),
       h("p", { class: "hint" }, "Used for the fire animation and, on hold keys, the glow while held.")));
@@ -479,30 +480,28 @@ function knobEditor(knob) {
     sect("Push + turn", h("p", { class: "hint" }, "Used while the knob is held down. Leave empty to use Turn."),
       stepList(m.push_turn ||= [], true)),
     sect("Push (no turn)", h("p", { class: "hint" }, "Fires on release, only if the knob wasn't turned while held."),
-      m.push ? actionsEditor(m.push, false)
-        : h("button", { class: "btn", onclick: () => { m.push = { trigger: "press", do: [] }; commit(); } }, "+ Add push action"),
+      m.push ? h("div", {}, h("div", { style: "margin-bottom:10px" }, field("Mode",
+        seg([["single", "One-shot"], ["toggle", "Toggle"]], m.push.mode || "single", (v) => {
+          m.push.mode = v; if (v === "single") delete m.push.off; else m.push.off ||= []; commit(); }, "sm"))),
+        actionsEditor(m.push))
+        : h("button", { class: "btn", onclick: () => { m.push = { mode: "single", do: [] }; commit(); } }, "+ Add push action"),
       m.push && h("button", { class: "btn sm ghost", style: "margin-top:6px", onclick: () => { delete m.push; commit(); } }, "Remove push action")));
   return [head(h("button", { class: "btn sm danger", onclick: () => { delete layerCfg(S.layer).encoders[knob]; commit(); } }, "Clear")), body];
 }
 
-// ---------------------------------------------------------------------------- actions (single / toggle)
-// Toggle belongs to the key: it remembers on/off itself and runs its On list, then its Off list.
-// Actions always set a state (on/off, fade out/in); they never flip it.
-function actionsEditor(m, momentary) {
+// ---------------------------------------------------------------------------- action lists by key mode
+// One-shot: one list. Toggle: On (first press) / Off (next press); the key remembers which is next.
+// Momentary: On (key down) / Off (key up). Off lists are always written by the user; actions set a
+// state (on/off, fade out/in), they never flip it.
+function actionsEditor(m) {
   m.do ||= [];
-  const toggle = !!m.toggle && !momentary;
-  const out = [];
-  if (!momentary) out.push(h("div", { style: "margin-bottom:10px" }, field("Behaviour",
-    seg([[false, "Single"], [true, "Toggle"]], toggle, (v) => {
-      if (v) { m.toggle = true; m.off ||= []; } else { delete m.toggle; delete m.off; }
-      commit();
-    }, "sm"))));
-  if (!toggle) { out.push(stepList(m.do, false)); return h("div", {}, out); }
-  out.push(h("div", { class: "tgl" }, h("div", { class: "tglhead" }, h("b", {}, "ON"), h("span", { class: "muted" }, "first press")), stepList(m.do, false)),
-    h("div", { class: "tgl off" }, h("div", { class: "tglhead" }, h("b", {}, "OFF"), h("span", { class: "muted" }, "next press")),
-      !(m.off ||= []).length && h("p", { class: "hint" }, "Add the actions that turn this off, e.g. unmute what On muted."), stepList(m.off, false)),
-    h("p", { class: "hint" }, "The key remembers whether it's on; each press runs the other list."));
-  return h("div", {}, out);
+  const mode = m.mode || "single";
+  if (mode === "single") return stepList(m.do, false);
+  const [onWhen, offWhen] = mode === "momentary" ? ["key down", "key up"] : ["first press", "next press"];
+  return h("div", {},
+    h("div", { class: "tgl" }, h("div", { class: "tglhead" }, h("b", {}, "ON"), h("span", { class: "muted" }, onWhen)), stepList(m.do, false)),
+    h("div", { class: "tgl off" }, h("div", { class: "tglhead" }, h("b", {}, "OFF"), h("span", { class: "muted" }, offWhen)),
+      !(m.off ||= []).length && h("p", { class: "hint" }, "Add the actions that turn this off, e.g. unmute what On muted."), stepList(m.off, false)));
 }
 function macroPick(name, set) {
   return h("div", { class: "row" },
@@ -527,7 +526,7 @@ function newMacro() {
 }
 
 function stepList(steps, rotary) {
-  const allowed = Object.entries(ACT).filter(([, a]) => (rotary ? a.rot : !a.rot || a.both));
+  const allowed = Object.entries(ACT).filter(([, a]) => (rotary ? a.rot : !a.rot));
   const add = h("select", { class: "btn", onchange: (e) => {
     const d = e.target.value; if (!d) return;
     const st = { do: d };
@@ -539,7 +538,6 @@ function stepList(steps, rotary) {
       if (t === "fxslot") st[k] = firstFxSlot();
       if (t === "fxslots") st[k] = [];
       if (t === "mgrp") st[k] = 1;
-      if (t === "dir" && !rotary) st[k] = "next";
       if (t === "ledcolour") st[k] = "green";
     }
     steps.push(st); commit();
@@ -557,7 +555,7 @@ function firstFxSlot() { const s = Object.keys(S.fx).find((k) => S.fx[k] && S.fx
 
 function stepRow(steps, st, i, rotary) {
   const a = ACT[st.do] || { label: st.do, f: [] };
-  const fields = a.f.filter(([, t]) => !(t === "dir" && rotary)).map(([k, t, o]) => fieldFor(st, k, t, o || {}));
+  const fields = a.f.map(([k, t, o]) => fieldFor(st, k, t, o || {}));
   return h("div", { class: "step" + (st.do === "wait" ? " wait" : "") },
     h("div", { class: "no" }, i + 1),
     h("div", {}, h("div", { style: "font-weight:600;text-transform:uppercase;margin-bottom:6px" }, a.label),
@@ -590,7 +588,6 @@ function fieldFor(st, k, t, o) {
     case "wait": return field("Next action", seg([[true, "Waits for fade"], [false, "Runs at once"]], st[k] !== false, (v) => { st[k] = v; commit(); }, "sm"));
     case "op": return field("Set", seg([["on", "On"], ["off", "Off"], ...(st[k] === "toggle" || !st[k] ? [["toggle", "Flip (old)"]] : [])], st[k] || "toggle", (v) => { st[k] = v; commit(); }, "sm"));
     case "macro": return field("Macro", macroPick(st[k], (v) => { st[k] = v; }));
-    case "dir": return field("Direction", seg([["next", "Next"], ["prev", "Prev"]], st[k] || "next", (v) => { st[k] = v; commit(); }, "sm"));
     case "num": return field(k === "step" ? "Step" : k === "time" ? "Fade time" : k, h("span", {}, numInput(st[k], (v) => { st[k] = v; }, o), o.unit && h("span", { class: "unit" }, o.unit)));
     case "text": return field(k, h("input", { type: "text", value: st[k] ?? "", placeholder: o.ph,
       oninput: (e) => { const v = e.target.value; st[k] = k === "value" && v !== "" && !isNaN(+v) ? +v : v; commit(false); } }));
@@ -602,17 +599,14 @@ function fieldFor(st, k, t, o) {
     }
     case "mgrp": return field("Group", h("select", { onchange: (e) => { st[k] = +e.target.value; commit(); } },
       [1, 2, 3, 4, 5, 6, 7, 8].map((n) => h("option", { value: n, selected: st[k] === n }, `${n}${stripInfo("mgrp", n).name ? " · " + stripInfo("mgrp", n).name : ""}`))));
-    case "fxslot": return field("FX slot", fxSlotSelect(st[k], (v) => { st[k] = v; delete st.param; delete st.value; commit(); }));
     case "fxslots": return field("FX slots", h("div", { class: "row", style: "gap:4px" }, [...Array(16).keys()].map((i) => {
       const n = i + 1, on = (st[k] || []).includes(n);
       return h("button", { class: "btn sm" + (on ? " amber" : ""), title: fxName(n),
         onclick: () => { st[k] = on ? st[k].filter((x) => x !== n) : [...(st[k] || []), n].sort((a, b) => a - b); commit(); } },
         `${n}${S.fx[n] && S.fx[n] !== "NONE" ? " " + S.fx[n] : ""}`);
     })));
-    case "fxparam": case "fxenum": return field("Parameter", fxParamSelect(st, t === "fxenum"));
-    case "fxvalue": return field("Value", fxValueInput(st));
-    case "param": case "paramenum": return field("Parameter", paramBtn(st, t === "paramenum"));
-    case "paramvalue": return field("Value", paramValueInput(st));
+    case "param": return field("Parameter", paramBtn(st));
+    case "paramop": return paramOp(st);
     case "ledcolour": return field("Colour", colourPicker(st[k] === "base" ? undefined : st[k], (v) => { st[k] = v ?? "base"; }, { allowNone: true, noneLabel: "Back to the key's own colour" }));
     case "effect": return field("Effect", seg([["solid", "Solid"], ["flash", "Flash"], ["pulse", "Pulse"]], st[k] || "solid", (v) => { st[k] = v; commit(); }, "sm"));
     case "ledtarget": {
@@ -625,31 +619,6 @@ function fieldFor(st, k, t, o) {
   }
   return null;
 }
-function fxSlotSelect(val, set) {
-  return h("select", { onchange: (e) => set(+e.target.value) },
-    [...Array(16).keys()].map((i) => h("option", { value: i + 1, selected: val === i + 1 }, `FX ${i + 1} · ${fxName(i + 1)}`)));
-}
-function fxParams(slot) {
-  if (!slot) return null;
-  const key = slot + ":" + (S.fx[slot] || "");
-  if (S.fxParams[key] === undefined) {
-    S.fxParams[key] = null;
-    api(`/api/fx/${slot}`).then((p) => { S.fxParams[key] = p; render(); }).catch(() => {});
-  }
-  return S.fxParams[key];
-}
-function fxParamSelect(st, enumsOnly) {
-  const ps = fxParams(st.slot);
-  if (!ps) return h("select", { disabled: true }, h("option", {}, "Loading…"));
-  const list = ps.filter((p) => !p.readonly && p.type !== "str" && p.name !== "mdl" && (!enumsOnly || p.type === "enum" || p.type === "fenum"));
-  const present = list.some((p) => p.name === st.param);
-  return h("select", { onchange: (e) => { st.param = e.target.value; delete st.value; commit(); } },
-    h("option", { value: "", selected: !st.param }, "Choose…"),
-    st.param && !present && h("option", { value: st.param, selected: true }, `${st.param} (not in this model/mode)`),
-    list.map((p) => h("option", { value: p.name, selected: p.name === st.param },
-      `${p.longname}${p.unit ? " (" + p.unit + ")" : ""}${p.type === "enum" ? " ▾" : ""}`)));
-}
-function fxValueInput(st) { return valueInput(st, (fxParams(st.slot) || []).find((x) => x.name === st.param)); }
 function valueInput(st, p) {
   if (!p) return h("input", { type: "text", disabled: true, placeholder: "choose parameter" });
   if (p.type === "enum" || p.type === "fenum")
@@ -690,7 +659,7 @@ function paramLabel(path, plabel) {        // -> {cap, col, name, param}
   if (fx) return { cap: `FX.${fx[1]}`, col: null, name: fxName(+fx[1]), param: plabel || path.slice(fx[0].length) };
   return { cap: "WING", col: null, name: "", param: plabel || path };
 }
-function paramBtn(st, enumsOnly) {
+function paramBtn(st, enumsOnly = false) {
   const L = paramLabel(st.path, st.plabel);
   return h("button", { class: "target" + (st.path ? "" : " unset"), title: st.path || "",
     onclick: () => pickParam(st.path, (path, plabel) => { st.path = path; st.plabel = plabel; delete st.value; commit(); }, enumsOnly) },
@@ -708,6 +677,18 @@ function paramValueInput(st) {
   if (p && p.type === "int" && p.min === 0 && p.max === 1)
     return seg([[0, "Off"], [1, "On"]], st.value ?? null, (v) => { st.value = v; commit(); }, "sm");
   return valueInput(st, p);
+}
+function paramOp(st) {
+  // Set parameter: a fixed value, or one step up / down (option lists: next / previous option)
+  const op = st.op || "value", p = st.path && paramDef(st.path);
+  const isList = p && (p.type === "enum" || p.type === "fenum");
+  return h("div", { class: "row" },
+    field("Set to", seg([["value", "Value"], ["inc", isList ? "Next" : "Increase"], ["dec", isList ? "Previous" : "Decrease"]], op, (v) => {
+      if (v === "value") { delete st.op; delete st.step; delete st.wrap; } else { st.op = v; delete st.value; }
+      commit(); }, "sm")),
+    op === "value" ? field("Value", paramValueInput(st)) : [
+      p && !isList && p.type !== "fader" && !(p.type === "int" && p.max - p.min <= 16) && field("Step", h("span", {}, numInput(st.step, (v) => { st.step = v; }, { ph: "auto", step: 0.01, min: 0 }), p.unit && h("span", { class: "unit" }, p.unit))),
+      field("At the end", seg([[false, "Stop"], [true, "Wrap round"]], !!st.wrap, (v) => { if (v) st.wrap = true; else delete st.wrap; commit(); }, "sm"))]);
 }
 function pickParam(current, set, enumsOnly) {
   const m = $("modal");
