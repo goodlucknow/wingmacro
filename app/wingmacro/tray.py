@@ -22,6 +22,40 @@ LINUX_AUTOSTART = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"
 WIN_RUN = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 
+# --- the UI window ----------------------------------------------------------------
+
+def _app_browsers():
+    """Chrome first, then Edge / Chromium: browsers with a borderless app window (--app)."""
+    if sys.platform == "win32":
+        roots = [os.environ.get(v) for v in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")]
+        for rel in (r"Google\Chrome\Application\chrome.exe", r"Microsoft\Edge\Application\msedge.exe"):
+            yield from (os.path.join(r, rel) for r in roots if r)
+    elif sys.platform == "darwin":
+        for app, exe in (("Google Chrome", "Google Chrome"), ("Microsoft Edge", "Microsoft Edge"), ("Chromium", "Chromium")):
+            for base in (Path("/Applications"), Path.home() / "Applications"):
+                yield str(base / f"{app}.app" / "Contents" / "MacOS" / exe)
+    else:
+        import shutil
+        for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge"):
+            if shutil.which(name):
+                yield shutil.which(name)
+
+
+def open_ui(url):
+    """Show the UI in a borderless Chrome (or Edge) app window; the default browser if neither is installed."""
+    for exe in _app_browsers():
+        if os.path.isfile(exe):
+            try:
+                flags = 0x00000008 | 0x00000200 if sys.platform == "win32" else 0  # DETACHED_PROCESS | NEW_PROCESS_GROUP
+                subprocess.Popen([exe, f"--app={url}", "--window-size=1300,860"], stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags,
+                                 start_new_session=sys.platform != "win32")
+                return
+            except OSError as e:
+                log.warning("couldn't start %s: %s", exe, e)
+    webbrowser.open(url)
+
+
 # --- start at login -----------------------------------------------------------
 
 def launch_command():
@@ -114,7 +148,7 @@ def run(cfg_path, wing_ip, use_pad, web_host, web_port):
     ui_host = "127.0.0.1" if web_host in ("0.0.0.0", "::", "") else web_host
     url = f"http://{ui_host}:{web_port}/"
     if _get_status(url) is not None:  # already running: just show it
-        webbrowser.open(url)
+        open_ui(url)
         return
     first_run = not Path(cfg_path).exists()
 
@@ -128,7 +162,7 @@ def run(cfg_path, wing_ip, use_pad, web_host, web_port):
     def ready():
         started.set()
         if first_run:
-            webbrowser.open(url)
+            open_ui(url)
 
     def serve():
         asyncio.set_event_loop(loop)
@@ -173,7 +207,7 @@ def run(cfg_path, wing_ip, use_pad, web_host, web_port):
             log.warning("start at login: %s", e)
 
     icon = pystray.Icon(NAME, icon_image(64), "wingmacro", menu=pystray.Menu(
-        pystray.MenuItem("Open wingmacro", lambda: webbrowser.open(url), default=True),
+        pystray.MenuItem("Open wingmacro", lambda: open_ui(url), default=True),
         pystray.MenuItem(status_text, None, enabled=False),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Start at login", toggle_autostart, checked=lambda _i: autostart_enabled()),

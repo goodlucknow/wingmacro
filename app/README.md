@@ -22,8 +22,8 @@ Download from the repo's GitHub **Releases** page: `wingmacro-…-windows-setup.
 - **macOS**: open the dmg, drag wingmacro to Applications. The app isn't signed, so the first launch
   is blocked: System Settings → Privacy & Security → "Open Anyway" (once).
 
-It runs in the background with a tray / menu-bar icon: **Open wingmacro** (the UI in your browser,
-http://127.0.0.1:8780/), the console and pad status, **Start at login**, **Quit**. The icon's key is
+It runs in the background with a tray / menu-bar icon: **Open wingmacro** (the UI in a borderless Chrome app
+window, else Edge, else your default browser; http://127.0.0.1:8780/), the console and pad status, **Start at login**, **Quit**. The icon's key is
 amber while the console is connected. The first launch opens the UI; launching it again while it runs
 just opens the UI. Log: `wingmacro.log` next to the config.
 
