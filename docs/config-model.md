@@ -68,7 +68,7 @@ LED feedback for `hold`:
   and optional `layer` + `key` (1-based) to address another key. The default target is the key that ran the macro.
   Example: a toggle whose A side sets green and B side sets red.
 - The colour state belongs to (mapping layer, key), so a key inherited on other layers shows the same colour. State is kept in memory: after an app restart, keys show their own colour and toggles start on A.
-- **Momentary** keys restore any colours they changed when released.
+- **Momentary** keys change colours back only through their Off list (e.g. a Key LED action back to the key colour).
 - **Animations** (priority over the colour above): the hold glow while held and the armed flash, plus a **fire animation** when the key fires.
   Set it with `fire_anim`: `none`, `flash`, or `bloom` (light swells out of the key into its neighbours and shrinks
   back, 0.8 s; replaced `burst` on 2026-10-08, which is still read as bloom). Hold keys default to flash, others to none.
