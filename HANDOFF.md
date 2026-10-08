@@ -1,4 +1,4 @@
-# Handoff: console scenes / snippets (2026-10-08)
+# Handoff (2026-10-08): no active feature
 
 Read CLAUDE.md first. App running in the container: `cd app && setsid nohup ../.venv/bin/python -m wingmacro --web-host 0.0.0.0 > <scratchpad>/app.log`
 (find its PID with `ps -eo pid,args | awk '/python -m wingmacro --web-host/ && !/awk/'`; never `pkill -f`).
@@ -13,7 +13,9 @@ Headless Chrome: `~/.cache/ms-playwright/chromium_headless_shell-1243/...` needs
 (may be gone; then extract libatk etc. from .debs again).
 Not checked: the pad OLED itself after a model change (unit test covers the label/"n/a").
 
-## Next feature: console scenes / snippets
+## Parked: console scenes / snippets (user, 2026-10-08)
+
+Parked until the user finds a need in practice; may be better left to Wing Edit. Notes kept for then:
 
 The user wants keys to fire the **console's own** show scenes/snippets (Wing Edit's local shows aren't reachable).
 The console tree has a show-control node, so it looks possible:

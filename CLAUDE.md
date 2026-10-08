@@ -147,6 +147,7 @@ CLAUDE.md
 7. ~~Recover the AHK script~~: the last Surface version is `platform/windows/WING_TOUCH_TURN.ahk` (AHK v2: wheel acceleration with momentum + touch-to-cursor via raw digitizer input, SP4 screen constants hard-coded). Possible improvements: scope to the Wing Edit window (`#HotIf WinActive(...)`), read the screen size at runtime.
 8. Packaging (priority Windows, then macOS, Linux last; decided 2026-10-08): built — `wingmacro tray` (pystray icon, Start at login via HKCU Run / LaunchAgent / XDG autostart), PyInstaller spec + Inno Setup in `packaging/`, `.github/workflows/release.yml` attaches the Windows setup.exe and macOS arm64/Intel dmgs to a GitHub release on a `v*` tag. Unsigned (SmartScreen / Gatekeeper "Open Anyway"). Linux systemd unit still to do. The user's Mac (next to the desk) is the main host; the container copy is optional.
 9. Test on real hardware, against the WING at home.
+10. Parked (2026-10-08): firing the console's scenes/snippets from keys (`/$ctl/lib`, notes in HANDOFF.md). Only if needed in practice; Wing Edit may cover it.
 
 ## Working rules
 
