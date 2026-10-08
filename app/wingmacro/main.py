@@ -332,6 +332,9 @@ class App:
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
-            await runner.cleanup()
             if self.pad:
-                self.pad.close()
+                self.pad.close()  # first: the pad gets its own lighting back even if the rest is slow
+            try:
+                await asyncio.wait_for(runner.cleanup(), 3)  # open UI windows keep connections alive
+            except asyncio.TimeoutError:
+                log.warning("web server didn't stop in time")

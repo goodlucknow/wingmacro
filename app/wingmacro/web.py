@@ -210,7 +210,7 @@ async def start_web(app, host, port):
         web.post("/api/vial/unlock", vial_action(_unlock)), web.post("/api/vial/lock", vial_action(_lock)),
         web.post("/api/vial/{kind}", vial_action(_set)),
     ])
-    runner = web.AppRunner(wa, access_log=None)
+    runner = web.AppRunner(wa, access_log=None, shutdown_timeout=1.0)  # default 60 s: an open UI window held up Quit
     await runner.setup()
     await web.TCPSite(runner, host, port).start()
     return runner

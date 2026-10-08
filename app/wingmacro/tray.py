@@ -196,8 +196,10 @@ def run(cfg_path, wing_ip, use_pad, web_host, web_port):
         return f"Console {w} · pad {p}"
 
     def quit_(icon, _item=None):
+        # Runs on the UI thread (macOS: the main thread): never wait here, or the menu bar spins.
+        # The app shuts down in its own thread; we wait for it after the icon's loop has ended.
         loop.call_soon_threadsafe(stop.set)
-        worker.join(10)  # lets the pad go back to its own lighting
+        icon.visible = False
         icon.stop()
 
     def toggle_autostart(_icon, _item):
@@ -226,6 +228,9 @@ def run(cfg_path, wing_ip, use_pad, web_host, web_port):
                 shown = now
                 icon.update_menu()
             worker.join(2)
-        icon.update_menu()
 
     icon.run(setup=watch)
+    loop.call_soon_threadsafe(stop.set)
+    worker.join(5)  # lets the pad go back to its own lighting
+    logging.shutdown()
+    os._exit(0)  # don't let a stuck device or socket thread keep a menu-bar ghost alive
