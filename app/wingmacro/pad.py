@@ -4,8 +4,10 @@ Uses hidapi. On Linux the PyPI `hidapi` wheel talks to the device through libusb
 works in the IncusOS container (USB passthrough, no hidraw nodes), claiming interface 1 only.
 """
 import asyncio
+import ctypes
 import logging
 import struct
+import sys
 import threading
 import time
 
@@ -21,6 +23,18 @@ KC_TRNS = 0x0001
 N_LEDS = 16
 ROW_CW, ROW_CCW = 253, 252
 VIALRGB_DIRECT, VIALRGB_SOLID = 1, 2
+
+
+def _reset_hidapi():
+    """Drop hidapi's USB context so the next search starts fresh. On Linux the wheel uses libusb,
+    which only learns about replugged devices from hotplug events; in a container those never
+    arrive, so a reflashed or replugged pad stayed invisible until the app restarted."""
+    if sys.platform != "linux":
+        return
+    try:
+        ctypes.CDLL(hid.__file__).hid_exit()  # the next hid.enumerate() re-initialises
+    except (OSError, AttributeError) as e:
+        log.debug("hid_exit: %s", e)
 
 
 class PadError(Exception):
@@ -58,14 +72,19 @@ class Pad:
         """Connect, keep alive, reconnect on unplug. Runs until cancelled."""
         self._loop = asyncio.get_running_loop()
         try:
+            misses = 0
             while True:
                 try:
                     await self._loop.run_in_executor(None, self._open)
                 except Exception as e:  # anything during a replug/reflash: retry, never give up
                     log.debug("pad: %s", e)
                     self._drop()
+                    misses += 1
+                    if misses % 3 == 0:
+                        _reset_hidapi()
                     await asyncio.sleep(2)
                     continue
+                misses = 0
                 self._emit({"type": "connected"})
                 try:
                     while self.connected:
