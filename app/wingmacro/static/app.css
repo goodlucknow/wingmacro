@@ -128,6 +128,7 @@ label.f { display: flex; flex-direction: column; align-items: flex-start; gap: 3
 .sect > h4 { margin: 0 0 8px; font-size: 13px; font-weight: 600; letter-spacing: .1em; color: var(--dim); text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
 .sect > h4::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .hint { color: var(--faint); font-size: 13px; }
+.hint.na { color: var(--amber); }
 .muted { color: var(--dim); }
 .unit { color: var(--dim); font-size: 13px; margin-left: 3px; }
 

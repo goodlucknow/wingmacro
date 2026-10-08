@@ -5,6 +5,7 @@ import signal
 import threading
 
 from . import config as C
+from . import resolve as R
 from .actions import Context, a_refresh
 from .engine import Engine
 from .leds import Leds
@@ -43,6 +44,45 @@ class App:
         names = [f"/{k}/{n}/{f}" for k, cnt in STRIPS for n in range(1, cnt + 1) for f in ("name", "col")
                  if not (k == "mgrp" and f == "col")]
         await self.wing.watch(names)
+        if await self.stamp_params(self.cfg):
+            C.save(self.cfg_path, self.cfg)
+
+    async def stamp_params(self, cfg):
+        """Remember what each param step on a modelled node (FX slot, insert) was picked as (`pref`),
+        so it can be found again after a model change. Only for params the current model has.
+        True if anything changed."""
+        known = self.prefs()  # the UI's copy of the config may lack prefs stamped since it loaded
+        changed = False
+        for st in C.all_steps(cfg):
+            path = st.get("path")
+            if st.get("do") not in ("param", "param_set") or not path:
+                continue
+            path = "/" + path.strip("/")
+            if (st.get("pref") or {}).get("path") == path:
+                continue
+            if path in known:
+                st["pref"] = known[path]
+                changed = True
+                continue
+            if not self.wing.connected:
+                continue
+            node = path.rpartition("/")[0]
+            defs = await self.ctx.node_defs(node)
+            d = defs.get(path.rpartition("/")[2])
+            if "mdl" not in defs or d is None:
+                continue
+            st["pref"] = R.pref_of(path, await self.wing.value(node + "/mdl"), d)
+            changed = True
+        return changed
+
+    def prefs(self):
+        """{path: pref} of the current config's stamped param steps."""
+        out = {}
+        for st in C.all_steps(self.cfg or {}):
+            pref = st.get("pref")
+            if pref and pref.get("path") == "/" + (st.get("path") or "").strip("/"):
+                out[pref["path"]] = pref
+        return out
 
     def _on_wing_change(self, path, value):
         if path.startswith("/fx/") and path.endswith("/mdl"):
@@ -253,6 +293,7 @@ class App:
         Old-format configs (e.g. from a tab opened before an update) are converted first."""
         C.migrate(cfg)
         C.validate(cfg)
+        await self.stamp_params(cfg)
         C.save(self.cfg_path, cfg)
         self.cfg = cfg
 

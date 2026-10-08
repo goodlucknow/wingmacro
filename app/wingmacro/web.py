@@ -66,6 +66,20 @@ async def start_web(app, host, port):
                         "max": d.max, "items": d.items, "readonly": d.readonly}
                        for d in defs if d.type != 0]})
 
+    async def resolve(req):
+        """What a mapped param on a modelled node (FX slot, insert) drives in the current model:
+        {model, made_on, now: path | null, label}. `model` null = not a modelled node (nothing to show)."""
+        path = "/" + req.query.get("path", "").strip("/")
+        node = path.rpartition("/")[0]
+        defs = await app.ctx.node_defs(node)
+        if "mdl" not in defs:
+            return web.json_response({"model": None})
+        pref = app.prefs().get(path)
+        now, d = await app.ctx.resolve(path, pref)
+        return web.json_response({
+            "model": await app.wing.value(node + "/mdl"), "made_on": (pref or {}).get("model"),
+            "now": now if d else None, "label": P.param_label(now, d.longname) if d else None})
+
     async def scan(_):
         found = await asyncio.get_running_loop().run_in_executor(None, discover)
         return web.json_response(found)
@@ -189,7 +203,7 @@ async def start_web(app, host, port):
         web.get("/api/config", get_config), web.put("/api/config", put_config),
         web.get("/api/strips", strips), web.get("/api/pad", pad_keys),
         web.get("/api/fx", fx_list),
-        web.get("/api/scan", scan), web.get("/api/params", params), web.post("/api/console", set_console),
+        web.get("/api/scan", scan), web.get("/api/params", params), web.get("/api/resolve", resolve), web.post("/api/console", set_console),
         web.get("/api/keymap", keymap), web.post("/api/keymap", set_keycode),
         web.post("/api/pad/layer", pad_layer), web.post("/api/test/steps", test_steps), web.post("/api/test/key", test_key), web.get("/api/pad/backup", backup), web.post("/api/pad/restore", restore),
         web.get("/api/vial", vial_get), web.get("/api/vial/unlock", vial_status),

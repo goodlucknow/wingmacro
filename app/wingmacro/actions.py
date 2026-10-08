@@ -5,6 +5,7 @@ import math
 import time
 
 from . import params as P
+from . import resolve as R
 from . import wing as W
 
 log = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ class Context:
         self.fade_back = {}  # target -> level before its last fade (for "back")
         self.fx_models = {}  # slot -> model name
         self.node_defs_cache = {}  # node path -> {child name: NodeDef}
+        self.unresolved = set()  # mapped paths with no equivalent in their node's model (logged once)
         self.taps = {}  # slots key -> {"t": [press times], "ms": period or None}
         self.led_state = {}  # (mapping layer, key index) -> (colour, effect), set by `led` actions
         self.on_beat = []  # fn(period_s)
@@ -84,11 +86,30 @@ class Context:
         node, _, name = ("/" + path.strip("/")).rpartition("/")
         return (await self.node_defs(node)).get(name)
 
+    async def resolve(self, path, pref=None):
+        """(path, NodeDef) a mapped param drives now, or (path, None). On a node with a model (FX slot,
+        insert), a param missing from the current model is matched to its equivalent (resolve.match)."""
+        path = "/" + path.strip("/")
+        node, _, key = path.rpartition("/")
+        defs = await self.node_defs(node)
+        if "mdl" not in defs:
+            return path, defs.get(key)
+        if pref and pref.get("path") != path:
+            pref = None  # remembered for an earlier pick
+        d, how = R.match(key, pref, defs)
+        if d is None or how == "key":
+            if d is None and path not in self.unresolved:
+                self.unresolved.add(path)
+                log.info("%s: nothing equivalent in %s", path, self.wing.cached(node + "/mdl"))
+            return path, d
+        return f"{node}/{d.name}", d
+
     async def fx_def(self, slot, param):
         return await self.param_def(f"/fx/{slot}/{param}")
 
     def invalidate(self, node=None):
         """Forget cached definitions of `node` and everything under it (all if None)."""
+        self.unresolved.clear()
         if node is None:
             self.node_defs_cache.clear()
             return
@@ -248,16 +269,22 @@ async def a_set(ctx, p, ticks=None):
 
 async def a_param_set(ctx, p, ticks=None):
     """Set any console parameter: to a value (coerced to its type), or one step up/down
-    (`op`: inc | dec; option lists move one option, stopping at the ends unless `wrap`)."""
-    path = "/" + p["path"].strip("/")
+    (`op`: inc | dec; option lists move one option, stopping at the ends unless `wrap`).
+    After a model change a value is only written to an equivalent of the same type and unit."""
     if p.get("op") in ("inc", "dec"):
-        await _param_step(ctx, path, p, 1 if p["op"] == "inc" else -1, wrap=bool(p.get("wrap")))
+        await _param_step(ctx, p["path"], p, 1 if p["op"] == "inc" else -1)
         return
-    d = await ctx.param_def(path)
+    path, d = await ctx.resolve(p["path"], p.get("pref"))
+    pref = p.get("pref") or {}
+    if d is not None and path != "/" + p["path"].strip("/") and (
+            d.type_name != pref.get("type") or d.unit != pref.get("unit", "")):
+        d = None
+    v = p["value"]
+    if d is not None and d.type in (W.T_ENUM, W.T_FENUM) and v not in d.items:
+        d = None
     if d is None or d.readonly:
         log.info("%s: no writable param (model/mode?)", path)
         return
-    v = p["value"]
     if d.type == W.T_INT:
         v = int(v)
     elif d.type in (W.T_LINF, W.T_LOGF, W.T_FADER):
@@ -361,16 +388,23 @@ async def a_param(ctx, p, ticks):
     await _param_step(ctx, p["path"], p, ticks)
 
 
-async def _param_step(ctx, path, p, ticks, wrap=None):
+async def _param_step(ctx, path, p, ticks):
     """Step any parameter by `ticks`, by its console type: option lists move by option, logf is
     value-proportional, faders keep the -inf floor rules, numbers step by `step` (default by type)
-    within min/max. `wrap`: None (knobs) = option lists wrap round, numbers stop at the ends;
-    True / False (keys) = both wrap / both stop."""
-    path = "/" + path.strip("/")
-    d = await ctx.param_def(path)
+    within min/max. At the ends both stop, unless the step has `wrap` (option lists and ints wrap round).
+    After a model change the equivalent param is stepped (its own default step if the type differs);
+    with none, the screen shows 'n/a'."""
+    picked = "/" + path.strip("/")
+    path, d = await ctx.resolve(picked, p.get("pref"))
     if d is None or d.readonly or d.type in (W.T_NODE, W.T_STR):
         log.info("%s: no steppable param (model/mode?)", path)
+        show(ctx, p, path, "n/a")
         return
+    if path != picked:
+        p = {k: v for k, v in p.items() if k != "label"}  # the screen names what it drives now
+        if d.type_name != (p.get("pref") or {}).get("type"):
+            p.pop("step", None)
+    wrap = bool(p.get("wrap"))
     cur = await ctx.wing.value(path)
     if cur is None:
         return
@@ -381,7 +415,7 @@ async def _param_step(ctx, path, p, ticks, wrap=None):
         except ValueError:
             i = min(range(len(items)), key=lambda k: abs(items[k] - cur)) if d.type == W.T_FENUM else 0
         j = i + ticks
-        new = items[j % len(items) if wrap is not False else min(max(j, 0), len(items) - 1)]
+        new = items[j % len(items) if wrap else min(max(j, 0), len(items) - 1)]
     elif d.type == W.T_LOGF:
         pct = float(p.get("step", 0.01))  # value-proportional
         new = cur * (1 + pct) ** ticks
@@ -389,7 +423,7 @@ async def _param_step(ctx, path, p, ticks, wrap=None):
         new = step_level(cur, ticks * float(p.get("step", 0.1)))
     else:
         new = cur + ticks * float(p.get("step", default_step(d) or 1))
-    if wrap is True and d.type == W.T_INT and d.min is not None and not d.min <= new <= d.max:
+    if wrap and d.type == W.T_INT and d.min is not None and not d.min <= new <= d.max:
         new = d.min if new > d.max else d.max
     if d.type in (W.T_INT, W.T_LINF, W.T_LOGF) and d.min is not None:
         new = min(max(new, d.min), d.max)

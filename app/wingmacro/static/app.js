@@ -4,7 +4,7 @@
 
 // ---------------------------------------------------------------------------- state
 const S = {
-  cfg: null, strips: null, pad: null, fx: {}, pnodes: {}, live: null,
+  cfg: null, strips: null, pad: null, fx: {}, pnodes: {}, resolved: {}, live: null,
   page: "pad", layer: 0, follow: true, selectOnPress: true,
   sel: null,            // {kind:"key", idx} | {kind:"knob", knob}
   macroSel: null, consoles: null, scanning: false,
@@ -43,7 +43,7 @@ const ACT = {
   level_set: { label: "Set level", g: "Levels", f: [["target", "target"], ["db", "db"]] },
   level:     { label: "Level", g: "Levels", rot: true, f: [["target", "target"], ["step", "num", { unit: "dB", ph: "0.1", step: 0.1, min: 0 }], ["label", "screen"]] },
   gain:      { label: "Input gain", g: "Levels", rot: true, f: [["target", "targetch"], ["step", "num", { unit: "dB", ph: "0.5", step: 0.5, min: 0 }], ["label", "screen"]] },
-  param:     { label: "Parameter", g: "Parameters", rot: true, f: [["path", "param"], ["step", "num", { ph: "auto", step: 0.01, min: 0 }], ["label", "screen"]] },
+  param:     { label: "Parameter", g: "Parameters", rot: true, f: [["path", "param"], ["step", "num", { ph: "auto", step: 0.01, min: 0 }], ["wrap", "wrap"], ["label", "screen"]] },
   param_set: { label: "Set parameter", g: "Parameters", f: [["path", "param"], ["op", "paramop"]] },
   tap:       { label: "Tap tempo", g: "Effects", f: [["slots", "fxslots"], ["window", "tapavg"]] },
   macro:     { label: "Run macro", g: "Macros", f: [["name", "macro"]] },
@@ -618,6 +618,9 @@ function fieldFor(st, k, t, o) {
         `${n}${S.fx[n] && S.fx[n] !== "NONE" ? " " + S.fx[n] : ""}`);
     })));
     case "param": return field("Parameter", paramBtn(st));
+    case "wrap": return field("At the end", h("button", { class: "btn sm" + (st.wrap ? " amber" : ""),
+      title: "Off: stops at the first/last value. On: option lists and whole numbers wrap round.",
+      onclick: () => { if (st.wrap) delete st.wrap; else st.wrap = true; commit(); } }, "Wrap"));
     case "paramop": return paramOp(st);
     case "tapavg": return field("Average", h("span", { class: "row", style: "gap:6px;align-items:center;flex-wrap:nowrap" },
       numInput(st.window, (v) => { st.window = v; }, { ph: "4", step: 1, min: 1 }), h("span", { class: "unit" }, "taps"),
@@ -682,11 +685,24 @@ function paramLabel(path, plabel) {        // -> {cap, col, name, param}
   return { cap: "WING", col: null, name: "", param: plabel || path };
 }
 function paramBtn(st, enumsOnly = false) {
-  const L = paramLabel(st.path, st.plabel);
-  return h("button", { class: "target" + (st.path ? "" : " unset"), title: st.path || "",
-    onclick: () => pickParam(st.path, (path, plabel) => { st.path = path; st.plabel = plabel; delete st.value; commit(); }, enumsOnly) },
+  const L = paramLabel(st.path, st.plabel), R = st.path && resolved(st.path);
+  const btn = h("button", { class: "target" + (st.path ? "" : " unset"), title: st.path || "",
+    onclick: () => pickParam(st.path, (path, plabel) => { st.path = path; st.plabel = plabel; delete st.value; delete st.pref; commit(); }, enumsOnly) },
     h("span", { class: "tc", style: L.col ? `background:${WCOL[L.col]}` : "" }, L.cap),
     h("span", { class: "tn" }, st.path ? `${L.name}${L.name ? " · " : ""}${L.param}` : "Choose…"));
+  // after a model change (FX slot, insert): what the mapping drives now, or that it drives nothing
+  if (!R || !R.model || (R.now === "/" + st.path.replace(/^\/+/, "") && (!R.made_on || R.made_on === R.model))) return btn;
+  const made = R.made_on && R.made_on !== R.model ? ` (made on ${R.made_on})` : "";
+  return h("span", { style: "display:flex;flex-direction:column;gap:4px" }, btn,
+    h("span", { class: "hint" + (R.now ? "" : " na") }, R.now ? `now: ${R.label}${made}` : `not in ${R.model}${made}`));
+}
+function resolved(path) {                  // /api/resolve, cached until an FX model changes
+  if (S.resolved[path] === undefined) {
+    S.resolved[path] = null;
+    api("/api/resolve?path=" + encodeURIComponent(path)).then((r) => { S.resolved[path] = r; if (r.model) render(); })
+      .catch(() => { delete S.resolved[path]; });
+  }
+  return S.resolved[path];
 }
 function paramDef(path) {
   const n = path && pnode(parentOf(path));
@@ -1337,7 +1353,11 @@ function onLive(st) {
   S.live = st;
   if (S.follow && st.pad.connected && st.pad.layer !== S.layer) { S.layer = st.pad.layer; if (!editing()) render(); }
   const fxChanged = JSON.stringify(st.fx) !== JSON.stringify(Object.fromEntries(Object.entries(S.fx).filter(([, v]) => v && v !== "NONE")));
-  if (fxChanged) refreshMeta();
+  if (fxChanged) {
+    S.resolved = {};
+    for (const k of Object.keys(S.pnodes)) if (k.startsWith("/fx/")) delete S.pnodes[k];
+    refreshMeta();
+  }
   for (const ev of st.events || []) {
     if (ev.type !== "key") continue;
     const knob = ev.row >= 252 ? ["left", "right"][ev.col] : ev.col === 4 && ev.row < 2 ? ["left", "right"][ev.row] : null;

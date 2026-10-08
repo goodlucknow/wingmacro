@@ -112,6 +112,19 @@ def _mappings(cfg):
         yield from (e["push"] for e in layer.get("encoders", {}).values() if "push" in e)
 
 
+def all_steps(cfg):
+    """Every step list's steps (keys' do/off, knob turns, macros)."""
+    for m in _mappings(cfg):
+        for k in ("do", "off"):
+            yield from (st for st in m.get(k) or [] if isinstance(st, dict))
+    for layer in cfg.get("layers", {}).values():
+        for e in layer.get("encoders", {}).values():
+            for k in ("turn", "push_turn"):
+                yield from (st for st in e.get(k) or [] if isinstance(st, dict))
+    for mac in cfg.get("macros", {}).values():
+        yield from (st for st in mac.get("steps") or [] if isinstance(st, dict))
+
+
 def _key_mode_v5(m):
     """v4 -> v5: trigger (press | hold | momentary) + toggle -> mode (single | toggle | momentary) + hold."""
     trig = m.pop("trigger", "press")

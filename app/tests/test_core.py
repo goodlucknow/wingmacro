@@ -360,3 +360,108 @@ def test_knob_values_for_the_pad_screen():
         await a_level(ctx, {"target": "ch/1/send/2"}, 1)   # up from -inf: straight to -89.5
     asyncio.run(go())
     assert shown == [("FX3 Pre delay", "25.0 ms"), ("Verb PD", "26.0 ms"), ("CH1 S2 Level", "-89.5 dB")]
+
+
+# --- FX model changes (resolve.py), against real defs from docs/wing-fx-models-3.1.1.json ----------
+
+def _fx_models():
+    import json
+    from pathlib import Path
+    from wingmacro.wing import NodeDef
+    raw = json.loads((Path(__file__).parents[2] / "docs/wing-fx-models-3.1.1.json").read_text())
+    names = ["node", "linf", "logf", "fader", "int", "enum", "fenum", "str"]
+    return {m: [NodeDef(p["name"], p["longname"], 0, names.index(p["type"]), p["unit"], p["ro"],
+                        p["min"], p["max"], items=p["items"], idx=p["idx"]) for p in ps] for m, ps in raw.items()}
+
+
+class FxWing:
+    """One FX slot (/fx/8) whose model can be changed; values default to each param's min / first item."""
+    def __init__(self, model):
+        self.models = _fx_models(); self.v = {}; self.load(model)
+    def load(self, model):
+        self.v["/fx/8/mdl"] = model
+        for d in self.models[model]:
+            self.v.setdefault(f"/fx/8/{d.name}", d.items[0] if d.items else d.min)
+    def defs8(self): return {d.name: d for d in self.models[self.v["/fx/8/mdl"]]}
+    async def defs(self, node): return self.models[self.v["/fx/8/mdl"]] if node == "/fx/8" else []
+    async def get(self, p): return self.v.get(p)
+    def cached(self, p): return self.v.get(p)
+    async def value(self, p): return self.v.get(p)
+    async def set(self, p, val): self.v[p] = val
+
+
+def test_resolve_equivalents_across_models():
+    from wingmacro.resolve import match, pref_of
+    M = {m: {d.name: d for d in ds} for m, ds in _fx_models().items()}
+    pick = lambda m, k: pref_of(f"/fx/8/{k}", m, M[m][k])
+    name = lambda m, k, new: (match(k, pick(m, k), M[new])[0] or W.NodeDef("-", "", 0, 0, "", True)).name
+    assert name("TAP-DL", "rep", "ST-DL") == "feed"      # Ultratap repeats -> WING delay feedback
+    assert name("TAP-DL", "time", "ST-DL") == "time" and name("TAP-DL", "fact", "ST-DL") == "fact"
+    assert name("ST-DL", "feed", "TAPE-DL") == "sust"
+    for a in ("HALL", "ROOM", "PLATE", "CHAMBER"):
+        for b in ("HALL", "ROOM", "PLATE", "CHAMBER", "V-REV", "SPRING"):
+            assert name(a, "dcy", b) == "dcy"
+        assert name(a, "pdel", "V-REV") == "pdel"
+    assert name("HALL", "mspd", "AMBI") == "mod"          # role alias
+    assert match("rep", None, M["ST-DL"])[0].name == "feed"  # old steps without pref: alias by key
+    assert match("zzz", None, M["ST-DL"])[0] is None
+
+
+def test_resolve_never_crosses_types():
+    from wingmacro.resolve import match, pref_of
+    M = {m: {d.name: d for d in ds} for m, ds in _fx_models().items()}
+    for a, ds in M.items():
+        for k, d in ds.items():
+            if d.readonly or d.type_name in ("node", "str"):
+                continue
+            for b in ("ST-DL", "HALL", "DIMCRS", "GEQ", "RACKAMP"):
+                got, how = match(k, pref_of(f"/fx/8/{k}", a, d), M[b])
+                if got is not None:
+                    num = {"linf", "logf", "fader", "int"}
+                    assert (got.type_name in num) == (d.type_name in num), (a, k, b, got.name)
+                    assert got.name != "mdl" or k == "mdl"
+
+
+def test_knob_follows_fx_model_change():
+    from wingmacro.actions import Context, a_param, a_param_set
+    from wingmacro.resolve import pref_of
+    w = FxWing("TAP-DL"); ctx = Context(w, lambda: {})
+    shown = []; ctx.on_value.append(lambda label, text: shown.append((label, text)))
+    st = {"do": "param", "path": "/fx/8/rep", "label": "Repeats",
+          "pref": pref_of("/fx/8/rep", "TAP-DL", w.defs8()["rep"])}
+
+    async def go():
+        await a_param(ctx, st, 2)
+        assert w.v["/fx/8/rep"] == w.defs8()["rep"].min + 2 and shown[-1][0] == "Repeats"
+        w.load("ST-DL"); ctx.invalidate("/fx/8")             # the mdl change event
+        await a_param(ctx, st, 3)
+        assert w.v["/fx/8/feed"] == 0.3 and shown[-1][0] == "FX8 Feed"   # linf default step; label follows
+        w.load("HALL"); ctx.invalidate("/fx/8")
+        before = dict(w.v)
+        await a_param(ctx, {**st, "pref": {**st["pref"], "idx": 99}}, 1)
+        assert w.v == before and shown[-1] == ("Repeats", "n/a")
+        # a set value only lands on an equivalent of the same type and unit
+        w.load("ST-DL"); ctx.invalidate("/fx/8")
+        await a_param_set(ctx, {"path": "/fx/8/rep", "value": 3, "pref": st["pref"]})
+        assert w.v["/fx/8/feed"] == 0.3
+    asyncio.run(go())
+
+
+def test_option_lists_stop_at_the_ends_unless_wrap():
+    from wingmacro.actions import Context, a_param, a_param_set
+    w = FxWing("ST-DL"); ctx = Context(w, lambda: {})
+    items = w.defs8()["fact"].items
+
+    async def go():
+        w.v["/fx/8/fact"] = items[-1]
+        await a_param(ctx, {"path": "/fx/8/fact"}, 1)
+        assert w.v["/fx/8/fact"] == items[-1]             # knob stops at the end by default
+        await a_param(ctx, {"path": "/fx/8/fact", "wrap": True}, 1)
+        assert w.v["/fx/8/fact"] == items[0]
+        await a_param(ctx, {"path": "/fx/8/fact"}, -1)
+        assert w.v["/fx/8/fact"] == items[0]
+        await a_param_set(ctx, {"path": "/fx/8/fact", "op": "dec", "wrap": True})
+        assert w.v["/fx/8/fact"] == items[-1]
+        await a_param_set(ctx, {"path": "/fx/8/fact", "op": "inc"})
+        assert w.v["/fx/8/fact"] == items[-1]
+    asyncio.run(go())
