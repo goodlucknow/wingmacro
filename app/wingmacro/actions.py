@@ -422,7 +422,12 @@ async def _param_step(ctx, path, p, ticks):
     elif d.type == W.T_FADER:
         new = step_level(cur, ticks * float(p.get("step", 0.1)))
     else:
-        new = cur + ticks * float(p.get("step", default_step(d) or 1))
+        step = float(p.get("step", default_step(d) or 1))
+        q = (d.max - d.min) / (d.steps - 1) if d.type == W.T_LINF and (d.steps or 0) > 1 else 0
+        if q > step:  # the console stores linf on a grid of `steps` values: smaller steps never move it
+            new = d.min + round((cur - d.min) / q + ticks) * q
+        else:
+            new = cur + ticks * step
     if wrap and d.type == W.T_INT and d.min is not None and not d.min <= new <= d.max:
         new = d.min if new > d.max else d.max
     if d.type in (W.T_INT, W.T_LINF, W.T_LOGF) and d.min is not None:

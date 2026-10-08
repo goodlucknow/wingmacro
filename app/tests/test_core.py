@@ -371,7 +371,8 @@ def _fx_models():
     raw = json.loads((Path(__file__).parents[2] / "docs/wing-fx-models-3.1.1.json").read_text())
     names = ["node", "linf", "logf", "fader", "int", "enum", "fenum", "str"]
     return {m: [NodeDef(p["name"], p["longname"], 0, names.index(p["type"]), p["unit"], p["ro"],
-                        p["min"], p["max"], items=p["items"], idx=p["idx"]) for p in ps] for m, ps in raw.items()}
+                        p["min"], p["max"], p.get("steps"), items=p["items"], idx=p["idx"]) for p in ps]
+            for m, ps in raw.items()}
 
 
 class FxWing:
@@ -435,7 +436,7 @@ def test_knob_follows_fx_model_change():
         assert w.v["/fx/8/rep"] == w.defs8()["rep"].min + 2 and shown[-1][0] == "Repeats"
         w.load("ST-DL"); ctx.invalidate("/fx/8")             # the mdl change event
         await a_param(ctx, st, 3)
-        assert w.v["/fx/8/feed"] == 0.3 and shown[-1][0] == "FX8 Feed"   # linf default step; label follows
+        assert w.v["/fx/8/feed"] == 3.0 and shown[-1][0] == "FX8 Feed"   # one console step (1 %) a tick; label follows
         w.load("HALL"); ctx.invalidate("/fx/8")
         before = dict(w.v)
         await a_param(ctx, {**st, "pref": {**st["pref"], "idx": 99}}, 1)
@@ -443,7 +444,7 @@ def test_knob_follows_fx_model_change():
         # a set value only lands on an equivalent of the same type and unit
         w.load("ST-DL"); ctx.invalidate("/fx/8")
         await a_param_set(ctx, {"path": "/fx/8/rep", "value": 3, "pref": st["pref"]})
-        assert w.v["/fx/8/feed"] == 0.3
+        assert w.v["/fx/8/feed"] == 3.0
     asyncio.run(go())
 
 

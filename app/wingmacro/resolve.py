@@ -69,7 +69,7 @@ def match(key, pref, defs):
             if d.longname.upper() == ln and d.unit == pref.get("unit", "") and compatible(d, ptype):
                 return d, "name"
     idx = pref.get("idx")
-    if idx is not None:
+    if idx:  # the console's param number; 0 = the header params every model shares (matched by key)
         for d in defs.values():
             if d.idx == idx and d.name != "mdl" and compatible(d, ptype):
                 return d, "position"
