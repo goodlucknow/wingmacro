@@ -488,49 +488,19 @@ function knobEditor(knob) {
 // ---------------------------------------------------------------------------- actions (single / toggle)
 // Toggle belongs to the key: it remembers on/off itself and runs its On list, then its Off list.
 // Actions always set a state (on/off, fade out/in); they never flip it.
-const INVERSE = { mute: { on: "off", off: "on" }, mgrp: { on: "off", off: "on" } };
-function inverseSteps(steps) {              // keep in sync with actions.inverse_steps
-  const out = [];
-  for (const st of [...(steps || [])].reverse()) {
-    if (INVERSE[st.do]?.[st.op]) out.push({ ...st, op: INVERSE[st.do][st.op] });
-    else if (st.do === "fade" && st.db !== "back") out.push({ ...st, db: "back" });
-    else if (st.do === "led") out.push({ do: "led", colour: "base", ...(st.key ? { layer: st.layer, key: st.key } : {}) });
-  }
-  return out;
-}
-function stepText(st) {
-  const a = ACT[st.do]?.label || st.do;
-  const op = { on: "on", off: "off", down: "fade out", up: "fade in" }[st.op] || "";
-  if (st.do === "led") return st.colour === "base" ? "Key LED: back to key colour" : `Key LED: ${typeof st.colour === "string" ? st.colour : "custom"}`;
-  if (st.do === "mgrp") return `Mute group ${st.n} ${op}`;
-  if (st.do === "fade") return `Fade ${targetLabel(st.target).name} ${st.db === "back" ? "back" : st.db === "-inf" ? "to −∞" : `to ${st.db ?? 0} dB`} over ${st.time ?? 5}s`;
-  return `${a} ${op}${st.target ? " · " + targetLabel(st.target).name : ""}`.trim();
-}
 function actionsEditor(m, momentary) {
   m.do ||= [];
   const toggle = !!m.toggle && !momentary;
   const out = [];
   if (!momentary) out.push(h("div", { style: "margin-bottom:10px" }, field("Behaviour",
     seg([[false, "Single"], [true, "Toggle"]], toggle, (v) => {
-      if (v) { m.toggle = true; if (m.off_auto === undefined) m.off_auto = true; } else { delete m.toggle; delete m.off; delete m.off_auto; }
+      if (v) { m.toggle = true; m.off ||= []; } else { delete m.toggle; delete m.off; }
       commit();
     }, "sm"))));
   if (!toggle) { out.push(stepList(m.do, false)); return h("div", {}, out); }
-  const auto = m.off_auto !== false;
-  const inv = inverseSteps(m.do);
-  const skipped = m.do.filter((st) => !INVERSE[st.do]?.[st.op] && st.do !== "led" && !(st.do === "fade" && st.db !== "back")).map((st) => ACT[st.do]?.label || st.do);
   out.push(h("div", { class: "tgl" }, h("div", { class: "tglhead" }, h("b", {}, "ON"), h("span", { class: "muted" }, "first press")), stepList(m.do, false)),
-    h("div", { class: "tgl off" },
-      h("div", { class: "tglhead" }, h("b", {}, "OFF"), h("span", { class: "muted" }, "next press"),
-        seg([[true, "Automatic"], [false, "Custom"]], auto, (v) => {
-          if (v) { m.off_auto = true; delete m.off; } else { m.off = clone(inv); m.off_auto = false; }
-          commit();
-        }, "sm")),
-      auto ? h("div", {},
-        inv.length ? h("ol", { class: "autolist" }, inv.map((st) => h("li", {}, stepText(st)))) : h("p", { class: "hint" }, "Nothing to undo yet."),
-        h("p", { class: "hint" }, "The On actions reversed: mutes and mute groups flipped, fades sent back to where they started, key colours restored."
-          + (skipped.length ? ` Not reversed: ${[...new Set(skipped)].join(", ")}. Choose Custom to set the Off actions yourself.` : "")))
-        : stepList(m.off ||= [], false)),
+    h("div", { class: "tgl off" }, h("div", { class: "tglhead" }, h("b", {}, "OFF"), h("span", { class: "muted" }, "next press")),
+      !(m.off ||= []).length && h("p", { class: "hint" }, "Add the actions that turn this off, e.g. unmute what On muted."), stepList(m.off, false)),
     h("p", { class: "hint" }, "The key remembers whether it's on; each press runs the other list."));
   return h("div", {}, out);
 }

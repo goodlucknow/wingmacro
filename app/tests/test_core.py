@@ -71,7 +71,7 @@ def test_hold_arm_fire_and_cancel():
 
 def test_toggle_and_layer_fallback():
     cfg = {"pad": {}, "macros": {}, "layers": {"0": {"buttons": {"1": {
-        "toggle": True, "off_auto": False, "do": [{"v": "On"}], "off": [{"v": "Off"}]}}}, "2": {"buttons": {}}}}
+        "toggle": True, "do": [{"v": "On"}], "off": [{"v": "Off"}]}}}, "2": {"buttons": {}}}}
     eng = Engine(lambda: cfg, ctx=None)
     fired = []
     eng.run = lambda steps, key, *a, **k: fired.append(steps[0]["v"])
@@ -133,7 +133,8 @@ def test_led_actions_digico_style():
         async def value(self, p): return 0
         async def set(self, p, v): pass
     cfg = {"pad": {}, "macros": {"lit": {"steps": [{"do": "led", "colour": "green"}]}}, "layers": {"0": {"buttons": {
-        "1": {"toggle": True, "do": [{"do": "macro", "name": "lit"}, {"do": "led", "colour": "red"}]},   # auto Off
+        "1": {"toggle": True, "do": [{"do": "macro", "name": "lit"}, {"do": "led", "colour": "red"}],
+              "off": [{"do": "led", "colour": "base"}]},
         "2": {"trigger": "momentary", "do": [{"do": "led", "colour": "amber", "effect": "flash"},
                                              {"do": "led", "colour": "blue", "layer": 1, "key": 1}]}}}}}
     ctx = Context(FakeWing(), lambda: cfg)
@@ -152,24 +153,25 @@ def test_led_actions_digico_style():
     asyncio.run(go())
 
 
-def test_inverse_steps_and_migration():
-    from wingmacro.actions import inverse_steps
-    from wingmacro.config import migrate
+def test_migration():
+    from wingmacro.config import migrate, _auto_off
     on = [{"do": "mgrp", "n": 1, "op": "on"}, {"do": "fade", "target": "ch/1", "db": "-inf", "time": 5},
           {"do": "wait", "ms": 100}, {"do": "led", "colour": "red"}]
-    assert inverse_steps(on) == [{"do": "led", "colour": "base"}, {"do": "fade", "target": "ch/1", "db": "back", "time": 5},
+    assert _auto_off(on) == [{"do": "led", "colour": "base"}, {"do": "fade", "target": "ch/1", "db": "back", "time": 5},
                                  {"do": "mgrp", "n": 1, "op": "off"}]
     cfg = {"layers": {"0": {"buttons": {
         "1": {"do": [{"do": "mute", "target": "ch/1", "op": "toggle"}]},
         "2": {"do": {"toggle": ["a", [{"do": "refresh"}]]}, "led": {"bind": "connected"}},
         "3": {"do": "a"}}, "encoders": {}}},
         "macros": {"a": {"retrigger": "ignore", "steps": [{"do": "softmute", "target": "aux/1", "op": "down", "time": 4}]}}}
-    assert migrate(cfg) and cfg["version"] == 3
+    assert migrate(cfg) and cfg["version"] == 4
     assert cfg["macros"]["a"]["steps"] == [{"do": "fade", "target": "aux/1", "time": 4, "db": "-inf"},
                                            {"do": "mute", "target": "aux/1", "op": "on"}]
     b = cfg["layers"]["0"]["buttons"]
-    assert b["1"] == {"do": [{"do": "mute", "target": "ch/1", "op": "on"}], "toggle": True, "off_auto": True}
-    assert b["2"] == {"do": [{"do": "macro", "name": "a"}], "off": [{"do": "refresh"}], "toggle": True, "off_auto": False}
+    # v4: the old automatic Off is written out; custom Off lists are kept
+    assert b["1"] == {"do": [{"do": "mute", "target": "ch/1", "op": "on"}], "toggle": True,
+                      "off": [{"do": "mute", "target": "ch/1", "op": "off"}]}
+    assert b["2"] == {"do": [{"do": "macro", "name": "a"}], "off": [{"do": "refresh"}], "toggle": True}
     assert b["3"]["do"] == [{"do": "macro", "name": "a"}] and "retrigger" not in cfg["macros"]["a"]
 
 

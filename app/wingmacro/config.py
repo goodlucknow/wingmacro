@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 DEFAULT = {
-    "version": 3,
+    "version": 4,
     "console": {"ip": "", "discover": True},
     "pad": {"background": [22, 255, 47], "cancel_ms": 400, "hold_ms": 800},
     "macros": {},
@@ -88,6 +88,30 @@ def _split_softmute(steps):
     return out
 
 
+_INVERSE_OPS = {"mute": {"on": "off", "off": "on"}, "mgrp": {"on": "off", "off": "on"}}
+
+
+def _auto_off(steps):
+    """The automatic Off list toggle keys had up to v3 (the On list reversed: mutes and mute groups
+    flipped, fades sent back, key colours restored). Kept only to write it out during migration."""
+    out = []
+    for s in reversed(steps):
+        d = s.get("do")
+        if d in _INVERSE_OPS and s.get("op") in _INVERSE_OPS[d]:
+            out.append(dict(s, op=_INVERSE_OPS[d][s["op"]]))
+        elif d == "fade" and s.get("db") != "back":
+            out.append(dict(s, db="back"))
+        elif d == "led":
+            out.append({k: v for k, v in s.items() if k in ("do", "layer", "key")} | {"colour": "base"})
+    return out
+
+
+def _mappings(cfg):
+    for layer in cfg.get("layers", {}).values():
+        yield from layer.get("buttons", {}).values()
+        yield from (e["push"] for e in layer.get("encoders", {}).values() if "push" in e)
+
+
 def migrate(cfg):
     changed = _migrate_v1(cfg)
     if cfg.get("version", 1) < 3:
@@ -99,6 +123,13 @@ def migrate(cfg):
         for owner, key in lists:
             owner[key] = _split_softmute(owner[key])
         cfg["version"] = 3
+        changed = True
+    if cfg.get("version", 1) < 4:
+        # v3 -> v4: no automatic Off. Toggle keys that used it get it written out as their Off list.
+        for m in _mappings(cfg):
+            if m.pop("off_auto", True) is not False and m.get("toggle"):  # v3 default was automatic
+                m["off"] = _auto_off(m.get("do", []))
+        cfg["version"] = 4
         changed = True
     return changed
 

@@ -4,7 +4,7 @@ import copy
 import logging
 import time
 
-from .actions import ACTIONS, ROTARY, inverse_steps
+from .actions import ACTIONS, ROTARY
 
 log = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ class Engine:
             self.toggles[key] = not on
         if not on:
             return on_steps
-        return inverse_steps(on_steps) if m.get("off_auto", True) else (m.get("off") or [])
+        return m.get("off") or []
 
     def expand(self, steps, depth=0):
         """Steps with `macro` calls inlined (for inspection; running expands lazily)."""

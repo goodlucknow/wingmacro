@@ -42,10 +42,8 @@ A key has **one** trigger: `press` or `hold` (both **fire on release**), or `mom
 - **Single**: `do` is the list of actions run on each fire.
 - **Toggle** (`"toggle": true`): the key keeps its own on/off state, deliberately **not** read from the console,
   so "this key is on" is always definite. The first press runs `do` (On), the next runs Off, and so on.
-  - With `"off_auto": true` (the default), Off is generated as the On list reversed: mutes and mute groups flipped,
-    fades sent `back`, `led` colours returned to the key colour. Actions without an inverse (wait, tap, set,
-    FX, levels, macros) are skipped.
-  - With `"off_auto": false`, Off is `"off": [...]`, written by hand.
+  - Off is `"off": [...]`, always written by hand (decided 2026-10-08: no automatic reverse; guessing the
+    inverse of a macro list was a recipe for surprises). Config v4 wrote any old automatic Off out as real steps.
 - Momentary keys are always Single: their release restores everything.
 - Actions **set** a state (`op: on|off`, fade to a level); they never flip it. `op: toggle` is still accepted for
   old configs.
@@ -114,7 +112,7 @@ At slow speeds each tick is exactly one step. Faster turning multiplies the *num
 
 ```json
 {
-  "version": 3,
+  "version": 4,
   "console": { "ip": "192.168.1.62", "discover": true },
   "pad": { "background": [22, 255, 47], "cancel_ms": 400, "hold_ms": 800 },
   "macros": {
@@ -132,7 +130,7 @@ At slow speeds each tick is exactly one step. Faster turning multiplies the *num
                   { "do": "fade", "target": "main/1", "db": "-inf", "time": 5 },
                   { "do": "mute", "target": "main/1", "op": "on" },
                   { "do": "led", "colour": "red" } ] },
-        "4":  { "trigger": "hold", "hold_ms": 800, "toggle": true, "off_auto": false, "background": [0, 255, 40],
+        "4":  { "trigger": "hold", "hold_ms": 800, "toggle": true, "background": [0, 255, 40],
                 "fire_anim": "burst", "hold_colour": "red",
                 "do":  [{ "do": "macro", "name": "Band out" }, { "do": "led", "colour": "red" }],
                 "off": [{ "do": "mgrp", "n": 2, "op": "off" }, { "do": "mute", "target": "dca/1", "op": "off" },

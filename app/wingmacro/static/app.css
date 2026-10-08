@@ -324,8 +324,6 @@ textarea.raw { width: 100%; min-height: 360px; background: #050505; color: var(-
 .tgl.off { border-left-color: var(--faint); }
 .tglhead { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
 .tglhead b { font-size: 16px; letter-spacing: .06em; }
-.autolist { margin: 0 0 4px; padding-left: 22px; color: var(--text); }
-.autolist li { padding: 2px 0; }
 .key .tstate { position: absolute; left: 9%; top: 9%; font-size: 9px; font-weight: 700; color: var(--faint); }
 .key .tstate.on { color: var(--amber); }
 .btn.run { color: var(--green); border-color: #1d3b25; }
