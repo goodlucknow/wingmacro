@@ -311,3 +311,12 @@ def test_momentary_bloom_holds_while_down_and_toggle_shows_state():
     assert leds.frame(tr + 1)[0] == (22, 255, 200)
     leds.engine.toggles[(0, 1)] = False
     assert leds.frame(tr + 1)[0] == (22, 255, 47)
+
+
+def test_tap_key_fires_on_key_down_without_cancel_window():
+    eng, fired = make_engine({"1": {"mode": "single", "do": [{"do": "tap", "slots": [3], "v": "t"}]}})
+    eng.expand = lambda steps, depth=0: steps
+    for _ in range(3):
+        eng.press(1, 0); assert fired[-1] == "t"
+        eng.release(1, 0)
+    assert fired == ["t", "t", "t"] and not eng.buttons

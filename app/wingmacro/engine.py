@@ -60,6 +60,10 @@ class Engine:
             return on_steps
         return m.get("off") or []
 
+    def is_tap_key(self, m):
+        return m.get("mode", "single") != "momentary" and any(
+            s.get("do") == "tap" for s in self.expand(m.get("do") or []))
+
     def expand(self, steps, depth=0):
         """Steps with `macro` calls inlined (for inspection; running expands lazily)."""
         out = []
@@ -117,6 +121,9 @@ class Engine:
               "idx": m.get("led_index", idx), "t0": time.monotonic()}
         if m.get("mode") == "momentary":
             self._momentary_start(st)
+        elif self.is_tap_key(m):  # tap tempo: fire at once on key down (no cancel window or hold)
+            st["phase"] = "fired"
+            self.fire(st)
         elif m.get("hold"):
             st["phase"] = "holding"
             st["hold"] = m.get("hold_ms", pad.get("hold_ms", 800)) / 1000
@@ -138,7 +145,7 @@ class Engine:
         elif st["phase"] == "held":
             del self.buttons[wm]
             self._momentary_end(st)
-        elif st["phase"] == "cancelling":
+        elif st["phase"] in ("cancelling", "fired"):
             del self.buttons[wm]
         elif st["phase"] == "holding":
             if time.monotonic() - st["t0"] >= st["hold"]:

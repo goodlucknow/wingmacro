@@ -34,7 +34,7 @@ has a **mode** and, unless momentary, an optional **hold to fire**.
 
 | `mode` | Lists | Behaviour |
 |---|---|---|
-| `"single"` (One-shot) | `do` | Runs `do` on release, after a **cancel window** (`cancel_ms`, default `pad.cancel_ms` 400; a second tap within it cancels; 0 fires at once). Added 2026-10-08. |
+| `"single"` (One-shot) | `do` | Runs `do` on release, after a **cancel window** (`cancel_ms`, default `pad.cancel_ms` 400; a second tap within it cancels; 0 fires at once). Added 2026-10-08. Exception: a key whose actions include `tap` fires on key **down**, with no hold or cancel window, so taps are timed exactly. |
 | `"toggle"` | `do` (On), `off` (Off) | Alternates on release (no cancel window unless hold to fire): the first fire runs On, the next Off. The key keeps its own on/off state, deliberately **not** read from the console, so "this key is on" is always definite. |
 | `"momentary"` | `do` (On), `off` (Off) | On runs at key **down**, Off at key **up** (talkback). Off runs under the same key, so it takes over from an On list that is still running (e.g. a fade). If the pad disconnects mid-press, Off still runs. |
 

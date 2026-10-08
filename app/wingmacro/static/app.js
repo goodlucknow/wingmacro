@@ -45,7 +45,7 @@ const ACT = {
   gain:      { label: "Input gain", g: "Levels", rot: true, f: [["target", "targetch"], ["step", "num", { unit: "dB", ph: "0.5", step: 0.5, min: 0 }]] },
   param:     { label: "Parameter", g: "Parameters", rot: true, f: [["path", "param"], ["step", "num", { ph: "auto", step: 0.01, min: 0 }]] },
   param_set: { label: "Set parameter", g: "Parameters", f: [["path", "param"], ["op", "paramop"]] },
-  tap:       { label: "Tap tempo", g: "Effects", f: [["slots", "fxslots"], ["window", "num", { ph: "4", step: 1, min: 1 }]] },
+  tap:       { label: "Tap tempo", g: "Effects", f: [["slots", "fxslots"], ["window", "num", { label: "Average over", unit: "taps", ph: "4", step: 1, min: 1 }]] },
   macro:     { label: "Run macro", g: "Macros", f: [["name", "macro"]] },
   led:       { label: "Key LED", g: "Pad", f: [["colour", "ledcolour"], ["effect", "effect"], ["key", "ledtarget"]] },
   wait:      { label: "Wait", g: "System", f: [["ms", "num", { unit: "ms", def: 500, step: 50, min: 0 }]] },
@@ -442,7 +442,8 @@ function keyEditor(idx) {
         toggle: "Each press alternates: the first runs On, the next runs Off. The key remembers which is next.",
         momentary: "On runs when the key goes down, Off when it comes back up (e.g. talkback).",
       }[m.mode] || "Runs its actions each time it fires."),
-      m.mode !== "momentary" && h("div", { class: "row", style: "margin-top:10px" },
+      m.mode !== "momentary" && isTapKey(m) && h("p", { class: "hint" }, "Tap tempo keys fire the moment the key goes down, so taps are timed exactly (no hold or cancel window)."),
+      m.mode !== "momentary" && !isTapKey(m) && h("div", { class: "row", style: "margin-top:10px" },
         field("Hold to fire", seg([[false, "Off"], [true, "On"]], !!m.hold, (v) => {
           if (v) m.hold = true; else { delete m.hold; delete m.hold_ms; if (m.mode === "toggle") delete m.cancel_ms; } commit(); }, "sm")),
         // always laid out, hidden when not used, so the row never shifts
@@ -450,7 +451,7 @@ function keyEditor(idx) {
           field("Hold time", h("span", {}, numInput(m.hold_ms, (v) => { m.hold_ms = v; }, { ph: pad.hold_ms ?? 800, step: 50, min: 100 }), h("span", { class: "unit" }, "ms")))),
         h("div", { style: m.hold || (m.mode || "single") === "single" ? "" : "visibility:hidden" },
           field("Cancel window", h("span", {}, numInput(m.cancel_ms, (v) => { m.cancel_ms = v; }, { ph: pad.cancel_ms ?? 400, step: 50, min: 0 }), h("span", { class: "unit" }, "ms"))))),
-      m.mode !== "momentary" && h("p", { class: "hint" }, m.hold
+      m.mode !== "momentary" && !isTapKey(m) && h("p", { class: "hint" }, m.hold
         ? "A safety for risky actions: hold until the key lights fully, then release. It strobes while armed; tap it again within the cancel window to cancel."
         : (m.mode || "single") === "single"
           ? "Fires on release, after the cancel window: it strobes meanwhile, and a second tap cancels. Set 0 to fire straight away."
@@ -500,6 +501,10 @@ function knobEditor(knob) {
 // One-shot: one list. Toggle: On (first press) / Off (next press); the key remembers which is next.
 // Momentary: On (key down) / Off (key up). Off lists are always written by the user; actions set a
 // state (on/off, fade out/in), they never flip it.
+function isTapKey(m, depth = 0) {             // keep in sync with Engine.is_tap_key
+  return (m.do || m.steps || []).some((st) => st.do === "tap" ||
+    (st.do === "macro" && depth < 8 && S.cfg.macros?.[st.name] && isTapKey(S.cfg.macros[st.name], depth + 1)));
+}
 function actionsEditor(m) {
   m.do ||= [];
   const mode = m.mode || "single";
@@ -595,7 +600,7 @@ function fieldFor(st, k, t, o) {
     case "wait": return field("Next action", seg([[true, "Waits for fade"], [false, "Runs at once"]], st[k] !== false, (v) => { st[k] = v; commit(); }, "sm"));
     case "op": return field("Set", seg([["on", "On"], ["off", "Off"], ...(st[k] === "toggle" || !st[k] ? [["toggle", "Flip (old)"]] : [])], st[k] || "toggle", (v) => { st[k] = v; commit(); }, "sm"));
     case "macro": return field("Macro", macroPick(st[k], (v) => { st[k] = v; }));
-    case "num": return field(k === "step" ? "Step" : k === "time" ? "Fade time" : k, h("span", {}, numInput(st[k], (v) => { st[k] = v; }, o), o.unit && h("span", { class: "unit" }, o.unit)));
+    case "num": return field(o.label || (k === "step" ? "Step" : k === "time" ? "Fade time" : k), h("span", {}, numInput(st[k], (v) => { st[k] = v; }, o), o.unit && h("span", { class: "unit" }, o.unit)));
     case "text": return field(k, h("input", { type: "text", value: st[k] ?? "", placeholder: o.ph,
       oninput: (e) => { const v = e.target.value; st[k] = k === "value" && v !== "" && !isNaN(+v) ? +v : v; commit(false); } }));
     case "db": {

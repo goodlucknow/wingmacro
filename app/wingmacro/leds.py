@@ -188,13 +188,15 @@ class Leds:
                 asyncio.get_running_loop().create_task(self.wing.value(path))
         return None, 0.0
 
+    TAP_PEAK = 0.03  # s at full brightness on each beat: a hard attack
+
     def _tap(self, now, c, step, m):
-        """Beat flash: sharp attack, quick smooth decay (between a flash and a pulse)."""
+        """Beat flash: hard attack (full for TAP_PEAK), then a quick smooth decay."""
         period, origin = self.tap_period(step, now)
         if not period:
             return c
         since = (now - origin) % period
-        k = math.exp(-since / min(0.09, period / 6))
+        k = 1.0 if since < self.TAP_PEAK else math.exp(-(since - self.TAP_PEAK) / min(0.06, period / 8))
         return _toward(c, self.anim_colour(m), k) if k > 0.02 else c
 
     # --- frame ----------------------------------------------------------------
