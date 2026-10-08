@@ -612,10 +612,12 @@ function fieldFor(st, k, t, o) {
     case "mgrp": return field("Group", h("select", { onchange: (e) => { st[k] = +e.target.value; commit(); } },
       [1, 2, 3, 4, 5, 6, 7, 8].map((n) => h("option", { value: n, selected: st[k] === n }, `${n}${stripInfo("mgrp", n).name ? " · " + stripInfo("mgrp", n).name : ""}`))));
     case "fxslots": return field("FX slots", h("div", { class: "row", style: "gap:4px" }, [...Array(16).keys()].map((i) => {
-      const n = i + 1, on = (st[k] || []).includes(n);
-      return h("button", { class: "btn sm" + (on ? " amber" : ""), title: fxName(n),
+      const n = i + 1, on = (st[k] || []).includes(n), md = S.fx[n] && S.fx[n] !== "NONE" ? pnode(`/fx/${n}`) : null;
+      const noTap = md && !md.params.some((p) => p.name === "time" && p.unit === "ms");  // e.g. OILCAN, BBD-DL
+      return h("button", { class: "btn sm" + (on ? " amber" : ""),
+        title: noTap ? `${fxName(n)}: no tap tempo (its delay time isn't in ms)` : fxName(n),
         onclick: () => { st[k] = on ? st[k].filter((x) => x !== n) : [...(st[k] || []), n].sort((a, b) => a - b); commit(); } },
-        `${n}${S.fx[n] && S.fx[n] !== "NONE" ? " " + S.fx[n] : ""}`);
+        `${n}${S.fx[n] && S.fx[n] !== "NONE" ? " " + S.fx[n] : ""}`, noTap && h("span", { class: "unit" }, " no tap"));
     })));
     case "param": return field("Parameter", paramBtn(st));
     case "wrap": return field("At the end", h("button", { class: "btn sm" + (st.wrap ? " amber" : ""),

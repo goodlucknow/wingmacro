@@ -209,24 +209,32 @@ def tap_key(p):
 async def a_tap(ctx, p, ticks=None):
     """Moving average of the last TAP_WINDOW tap intervals, rounded to a whole BPM, written to /fx/N/time of each
     slot in `slots`. The delay's own `fact` (subdivision) stays on the console. Slots without a
-    `time` param in ms (e.g. BBD-DL, which uses /dly) are skipped."""
+    `time` param in ms (OILCAN and BBD-DL have unitless knobs) are skipped, and the pad's screen says
+    so on the first tap (on every tap if no slot takes it)."""
     st = ctx.taps.setdefault(tap_key(p), {"t": [], "ms": None})
     now = p.get("_t0") or time.monotonic()  # press time, so release timing doesn't add jitter
     if st["t"] and now - st["t"][-1] >= TAP_RESET:
         st["t"] = []
     st["t"] = (st["t"] + [now])[-(int(p.get("window", TAP_WINDOW)) + 1):]
-    if len(st["t"]) < 2:
+    slots = {}  # slot -> its time def, for slots that take a tap tempo
+    for slot in tap_key(p):
+        d = await ctx.fx_def(slot, "time")
+        if d is not None and d.unit == "ms" and not d.readonly:
+            slots[slot] = d
+    skipped = [s for s in tap_key(p) if s not in slots]
+    if skipped and (len(st["t"]) == 1 or not slots):  # say so on the pad's screen, not just in the log
+        for cb in ctx.on_value:
+            cb(" ".join(f"FX{s} {ctx.fx_models.get(s) or ''}".strip() for s in skipped)[:14], "no tap tempo")
+    if len(st["t"]) < 2 or not slots:
+        if skipped:
+            log.info("tap: fx %s has no time param in ms; skipped", skipped)
         return
     period = (st["t"][-1] - st["t"][0]) / (len(st["t"]) - 1)
     period = 60 / max(1, round(60 / period))  # whole BPM, as most music is
     st["ms"] = period * 1000
     for cb in ctx.on_beat:
         cb(period)
-    for slot in tap_key(p):
-        d = await ctx.fx_def(slot, "time")
-        if d is None or d.unit != "ms" or d.readonly:
-            log.info("tap: fx %d (%s) has no time param in ms; skipped", slot, ctx.fx_models.get(slot))
-            continue
+    for slot, d in slots.items():
         ms = min(max(st["ms"], d.min), d.max) if d.min is not None else st["ms"]
         await ctx.wing.set(f"/fx/{slot}/time", int(round(ms)) if d.type == W.T_INT else round(ms, 1))
 

@@ -475,3 +475,23 @@ def test_wing_forgets_param_hashes_on_model_change():
     w.forget("/fx/4")
     assert set(w.path_hash) == {"/fx/4/mdl", "/fx/40/time"} and set(w.hash_path) == {1, 4}
     assert set(w.values) == {"/fx/4/mdl", "/fx/40/time"}
+
+
+def test_tap_warns_on_slots_without_a_time_in_ms():
+    from wingmacro.actions import Context, a_tap
+    w = FxWing("OILCAN"); ctx = Context(w, lambda: {}); ctx.fx_models[8] = "OILCAN"
+    shown = []; ctx.on_value.append(lambda label, text: shown.append((label, text)))
+    beats = []; ctx.on_beat.append(beats.append)
+
+    async def go():
+        for t in (0, 0.5, 1.0):
+            await a_tap(ctx, {"slots": [8], "_t0": 100 + t})
+    asyncio.run(go())
+    assert shown == [("FX8 OILCAN", "no tap tempo")] * 3 and beats == [] and w.v["/fx/8/time"] == 0.0
+    w.load("ST-DL"); w.v["/fx/8/mdl"] = "ST-DL"; ctx.invalidate("/fx/8"); shown.clear()
+
+    async def go2():
+        for t in (10, 10.5):
+            await a_tap(ctx, {"slots": [8], "_t0": 100 + t})
+    asyncio.run(go2())
+    assert shown == [] and w.v["/fx/8/time"] == 500.0
