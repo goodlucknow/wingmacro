@@ -210,6 +210,17 @@ class Pad:
         v = max(0, min(9999, round(bpm * 10)))
         self.send(0xF0, 0x05, v & 0xFF, v >> 8, max(1, min(255, round(secs * 10))))
 
+    def show_value(self, label, value, secs=1.5):
+        """Show a small label over a big value on the OLED for `secs` (firmware WM_PROTO >= 4; older: no-op).
+        ASCII only; the infinity sign is sent as 127. Label up to 14 characters, value up to 13."""
+        if not self.connected or self.proto < 4:
+            return
+
+        def enc(text, n):
+            text = text.replace("\u221e", "\x7f")
+            return [ord(c) if 32 <= ord(c) <= 127 else ord("?") for c in text[:n]]
+        self.send(0xF0, 0x06, max(1, min(255, round(secs * 10))), *enc(label, 14), 0, *enc(value, 13), 0)
+
     def unsubscribe(self):
         self.send(0xF0, 0x03)
 

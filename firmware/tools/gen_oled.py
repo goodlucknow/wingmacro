@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Generate firmware/vial/oled_frames.h: 128x32 OLED frames, one per layer, plus the BPM glyphs.
+"""Generate firmware/vial/oled_frames.h: 128x32 OLED frames, one per layer, the BPM glyphs, and two
+text fonts for the value screen (a knob's parameter: small label on top, big value below).
 
 Each frame (left-aligned; the case hides the right edge) = WING logo + layer number (1-4) shown dark on a bright
 rounded box on the right. The BPM screen (shown briefly after a tap tempo) is composed by the firmware from
@@ -24,6 +25,10 @@ FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 BPM_PX = 31                      # BPM digit font size (digits ~23 px tall)
 BPM_LABEL_PX = 11
 GLYPHS = "0123456789."           # index 10 = '.', 11 = the "BPM" label
+# Value screen (F0 06): printable ASCII plus 0x7f drawn as the infinity sign.
+TEXT_CHARS = "".join(map(chr, range(32, 127))) + "\u221e"
+LABEL_PX, LABEL_BASE = 11, 8     # label font size, baseline row (caps on rows 0-8, descenders to 10)
+VALUE_PX, VALUE_BASE = 20, 27    # value font size, baseline row (caps ~13-27, descenders to 31)
 OUT = os.path.join(os.path.dirname(__file__), "..", "vial", "oled_frames.h")
 
 
@@ -88,6 +93,35 @@ def bpm_glyphs():
     return [glyph(c, BPM_PX, 2) for c in GLYPHS] + [glyph("BPM", BPM_LABEL_PX, 0)]
 
 
+def text_glyph(ch, px, base, spacing, space_w):
+    """One character on a 32 px tall strip, drawn on the given baseline, cropped to its ink."""
+    font = ImageFont.truetype(FONT, px)
+    img = Image.new("1", (48, H), 0)
+    ImageDraw.Draw(img).text((8, base), ch, font=font, fill=1, anchor="ls")
+    box = img.getbbox()
+    if not box:
+        return Image.new("1", (space_w, H), 0)
+    l, _, r, _ = box
+    out = Image.new("1", (r - l + spacing, H), 0)
+    out.paste(img.crop((l, 0, r, H)), (0, 0))
+    return out
+
+
+def text_font(px, base, spacing, space_w):
+    return [text_glyph(c, px, base, spacing, space_w) for c in TEXT_CHARS]
+
+
+def text_preview(label, value, small, big):
+    img = Image.new("1", (W, H), 0)
+    for text, glyphs in ((label, small), (value, big)):
+        x = 0
+        for c in text:
+            g = glyphs[TEXT_CHARS.index(c)]
+            img.paste(g, (x, 0), g)
+            x += g.width
+    return img
+
+
 def bpm_preview(text, glyphs):
     img = Image.new("1", (W, H), 0)
     x = 0
@@ -111,8 +145,12 @@ def to_pages(img):
 def main():
     frames = [frame(l) for l in range(4)]
     glyphs = bpm_glyphs()
+    small, big = text_font(LABEL_PX, LABEL_BASE, 1, 3), text_font(VALUE_PX, VALUE_BASE, 2, 5)
     if "--preview" in sys.argv:
-        for l, f in enumerate(frames + [bpm_preview("120.5", glyphs), bpm_preview("88.0", glyphs)]):
+        for l, f in enumerate(frames + [bpm_preview("120.5", glyphs), bpm_preview("88.0", glyphs),
+                                        text_preview("FX3 Pre delay", "1250 ms", small, big),
+                                        text_preview("Ch 1 Fader", "-\u221e dB", small, big),
+                                        text_preview("FX5 Feedback", "1/4 Dotted", small, big)]):
             print(f"frame {l}")
             px = f.load()
             for y in range(H):
@@ -142,6 +180,18 @@ def main():
     for i in range(0, len(data), 16):
         lines.append("    " + ", ".join(f"0x{v:02x}" for v in data[i : i + 16]) + ",")
     lines.append("};")
+    for name, font, what in (("label", small, "label (top)"), ("value", big, "value (bottom)")):
+        data, offs = [], []
+        for g in font:
+            offs.append(len(data) // 4)
+            data += glyph_columns(g)
+        lines += ["", f"// Value screen, {what} font: chars 32-126, then 127 = infinity. Column-major, 4 bytes per column.",
+                  f"static const uint16_t PROGMEM {name}_glyph_col[{len(font)}] = {{{', '.join(map(str, offs))}}};",
+                  f"static const uint8_t PROGMEM {name}_glyph_w[{len(font)}] = {{{', '.join(str(g.width) for g in font)}}};",
+                  f"static const uint8_t PROGMEM {name}_glyph_data[{len(data)}] = {{"]
+        for i in range(0, len(data), 16):
+            lines.append("    " + ", ".join(f"0x{v:02x}" for v in data[i : i + 16]) + ",")
+        lines.append("};")
     with open(OUT, "w") as fh:
         fh.write("\n".join(lines) + "\n")
     print("wrote", os.path.normpath(OUT))

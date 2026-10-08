@@ -4,6 +4,7 @@ import logging
 import math
 import time
 
+from . import params as P
 from . import wing as W
 
 log = logging.getLogger(__name__)
@@ -65,6 +66,7 @@ class Context:
         self.taps = {}  # slots key -> {"t": [press times], "ms": period or None}
         self.led_state = {}  # (mapping layer, key index) -> (colour, effect), set by `led` actions
         self.on_beat = []  # fn(period_s)
+        self.on_value = []  # fn(label, text): a knob moved something, for the pad's screen
 
     async def node_defs(self, node):
         """{name: NodeDef} of a node's children, from the console (cached until invalidated)."""
@@ -265,12 +267,69 @@ async def a_param_set(ctx, p, ticks=None):
 
 # --- rotary actions -------------------------------------------------------
 
+INF = "\u221e"
+
+
+def _num(v):
+    """Precision by size: 2.35, 23.5, 235."""
+    a = abs(v)
+    return f"{v:.2f}" if a < 10 else f"{v:.1f}" if a < 100 else f"{v:.0f}"
+
+
+def fmt_value(v, d=None):
+    """A value as the pad's screen shows it, by console type and unit. `d` None = a fader level."""
+    if d is not None and d.type in (W.T_ENUM, W.T_STR):
+        return str(v)
+    if not isinstance(v, (int, float)):
+        return str(v)
+    unit = "dB" if d is None or d.type == W.T_FADER else d.unit
+    if unit == "dB":
+        if d is None or d.type == W.T_FADER:
+            if v <= -90:
+                return f"-{INF} dB"
+        return f"{v:+.1f} dB" if v else "0.0 dB"
+    if d is not None and d.type == W.T_INT:
+        return f"{int(v)} {unit}".strip()
+    if unit == "ms" and v >= 1000:
+        v, unit = v / 1000, "s"
+    elif unit == "Hz" and v >= 1000:
+        v, unit = v / 1000, "kHz"
+    return f"{_num(v)} {unit}".strip()
+
+
+def strip_label(path):
+    """/fx/3/time -> 'FX3', /ch/1/send/2/lvl -> 'CH1 S2'."""
+    segs = path.strip("/").split("/")
+    out = segs[0].upper() + (segs[1] if len(segs) > 1 and segs[1].isdigit() else "")
+    if "send" in segs and segs.index("send") + 1 < len(segs) - 1:
+        out += " S" + segs[segs.index("send") + 1]
+    return out
+
+
+def auto_label(path, d=None):
+    """Short screen label: 'FX3 Time', 'CH1 S2 Level'."""
+    return f"{strip_label(path)} {P.param_label(path, d.longname if d else '')}"
+
+
+def show(ctx, p, path, value, d=None, label=None):
+    """Tell the pad's screen (via ctx.on_value) what a knob just set, unless the step turns it off.
+    `d` None = a dB level."""
+    if p.get("screen") is False or not ctx.on_value:
+        return
+    text = fmt_value(value, d)
+    label = p.get("label") or label or auto_label(path, d)
+    for cb in ctx.on_value:
+        cb(label, text)
+
 async def a_level(ctx, p, ticks):
     path = level_path(p["target"])
     cur = await ctx.wing.value(path)
     new = step_level(cur, ticks * float(p.get("step", 0.1)))
     if new is not None and new != cur:
         await ctx.wing.set(path, new)
+    if cur is not None:
+        show(ctx, p, path, new if new is not None else cur,
+             label=strip_label(path) + (" Level" if is_send(path) else " Fader"))
 
 
 async def a_gain(ctx, p, ticks):
@@ -283,7 +342,9 @@ async def a_gain(ctx, p, ticks):
     path = f"/io/in/{grp}/{n}/g"
     cur = await ctx.wing.value(path)
     if cur is not None:
-        await ctx.wing.set(path, round(cur + ticks * float(p.get("step", 0.5)), 2))
+        new = round(cur + ticks * float(p.get("step", 0.5)), 2)
+        await ctx.wing.set(path, new)
+        show(ctx, p, path, new, label=strip_label(t) + " Gain")
 
 
 def default_step(d):
@@ -338,6 +399,7 @@ async def _param_step(ctx, path, p, ticks, wrap=None):
         new = round(new, 4)
     if new != cur:
         await ctx.wing.set(path, new)
+    show(ctx, p, path, new, d)
 
 
 async def a_macro(ctx, p, ticks=None):

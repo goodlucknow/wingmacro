@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import signal
+import threading
 
 from . import config as C
 from .actions import Context, a_refresh
@@ -26,6 +27,8 @@ class App:
         self.pad = Pad() if use_pad else None
         self.ctx = Context(self.wing, lambda: self.cfg)
         self.ctx.on_beat.append(self._show_bpm)
+        self.ctx.on_value.append(self._show_value)
+        self._val_next, self._val_busy, self._val_lock = None, False, threading.Lock()
         self.leds = Leds(lambda: self.cfg, self.pad, self.wing, self.ctx) if self.pad else None
         self.engine = Engine(lambda: self.cfg, self.ctx, self.leds)
         if self.leds:
@@ -99,6 +102,29 @@ class App:
         """After a tap sets the tempo: show it on the pad's OLED for 2 s."""
         if self.pad and self.pad.connected and period > 0:
             asyncio.get_running_loop().run_in_executor(None, self.pad.show_bpm, 60 / period, 2.0)
+
+    def _show_value(self, label, text):
+        """A knob moved a value: show it on the pad's OLED. Fast turns send only the latest value."""
+        if not (self.pad and self.pad.connected):
+            return
+        with self._val_lock:
+            self._val_next = (label, text)
+            if self._val_busy:
+                return
+            self._val_busy = True
+        asyncio.get_running_loop().run_in_executor(None, self._send_values)
+
+    def _send_values(self):
+        while True:
+            with self._val_lock:
+                nxt, self._val_next = self._val_next, None
+                if nxt is None:
+                    self._val_busy = False
+                    return
+            try:
+                self.pad.show_value(*nxt)
+            except Exception as e:
+                log.debug("show value: %s", e)
 
     async def _pad_call(self, fn, *a):
         if not (self.pad and self.pad.connected):

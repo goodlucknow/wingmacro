@@ -41,9 +41,9 @@ const ACT = {
   mgrp:      { label: "Mute group", g: "Mutes", f: [["n", "mgrp"], ["op", "op"]] },
   fade:      { label: "Fade", g: "Levels", f: [["target", "target"], ["db", "fadeto"], ["time", "num", { unit: "s", def: 5, step: 0.5, min: 0 }], ["wait", "wait"]] },
   level_set: { label: "Set level", g: "Levels", f: [["target", "target"], ["db", "db"]] },
-  level:     { label: "Level", g: "Levels", rot: true, f: [["target", "target"], ["step", "num", { unit: "dB", ph: "0.1", step: 0.1, min: 0 }]] },
-  gain:      { label: "Input gain", g: "Levels", rot: true, f: [["target", "targetch"], ["step", "num", { unit: "dB", ph: "0.5", step: 0.5, min: 0 }]] },
-  param:     { label: "Parameter", g: "Parameters", rot: true, f: [["path", "param"], ["step", "num", { ph: "auto", step: 0.01, min: 0 }]] },
+  level:     { label: "Level", g: "Levels", rot: true, f: [["target", "target"], ["step", "num", { unit: "dB", ph: "0.1", step: 0.1, min: 0 }], ["label", "screen"]] },
+  gain:      { label: "Input gain", g: "Levels", rot: true, f: [["target", "targetch"], ["step", "num", { unit: "dB", ph: "0.5", step: 0.5, min: 0 }], ["label", "screen"]] },
+  param:     { label: "Parameter", g: "Parameters", rot: true, f: [["path", "param"], ["step", "num", { ph: "auto", step: 0.01, min: 0 }], ["label", "screen"]] },
   param_set: { label: "Set parameter", g: "Parameters", f: [["path", "param"], ["op", "paramop"]] },
   tap:       { label: "Tap tempo", g: "Effects", f: [["slots", "fxslots"], ["window", "tapavg"]] },
   macro:     { label: "Run macro", g: "Macros", f: [["name", "macro"]] },
@@ -624,6 +624,11 @@ function fieldFor(st, k, t, o) {
       h("button", { class: "btn sm" + (st.flash !== false ? " amber" : ""), style: "margin-left:6px",
         title: "On: flashes on every beat. Off: flashes for 8 beats after the last tap, then rests.",
         onclick: () => { if (st.flash === false) delete st.flash; else st.flash = false; commit(); } }, "Flash")));
+    case "screen": return field("Pad screen", h("span", { class: "row", style: "gap:6px;align-items:center;flex-wrap:nowrap" },
+      h("input", { type: "text", value: st.label ?? "", placeholder: "auto label", maxlength: 14, disabled: st.screen === false,
+        style: "width:12em", oninput: (e) => { if (e.target.value) st.label = e.target.value; else delete st.label; commit(false); } }),
+      h("button", { class: "btn sm" + (st.screen !== false ? " amber" : ""), title: "Show the value on the pad's screen while turning",
+        onclick: () => { if (st.screen === false) delete st.screen; else st.screen = false; commit(); } }, "Show")));
     case "ledcolour": return field("Colour", colourPicker(st[k] === "base" ? undefined : st[k], (v) => { st[k] = v ?? "base"; }, { allowNone: true, noneLabel: "Back to the key's own colour" }));
     case "effect": return field("Effect", seg([["solid", "Solid"], ["flash", "Flash"], ["pulse", "Pulse"]], st[k] || "solid", (v) => { st[k] = v; commit(); }, "sm"));
     case "ledtarget": {

@@ -99,7 +99,7 @@ CLAUDE.md
   - Some parameters depend on the effect's mode and aren't always present (e.g. ST-DL offset). Handle this gracefully.
   - `str` parameters need a way to cycle through their options.
 - **Tap tempo**:
-  - Moving average of the tap intervals (window 4), reset after a gap of 2 s or more. Timed from key press. Rounded to a whole BPM (decided 2026-10-08), shown on the pad's OLED for 2 s.
+  - Moving average of the tap intervals (window 4), reset after a gap of 2 s or more. Timed from key press. Rounded to a whole BPM (decided 2026-10-08), shown on the pad's OLED for 2 s. Knob turns likewise show the parameter's label and value for 1.5 s (firmware proto 4, `F0 06`); main use: FX params like reverb pre-delay/decay, delay feedback/subdivision.
   - Per key, per FX slot (a tap macro lists one or more slots). The WING has no global tempo; don't emulate one.
   - **No multipliers** (decided 2026-10-07): write the beat period; the delay's `fact` subdivision stays on the console and is mappable like any FX param.
   - Delay time is `/fx/X/time`. Any slot with a `time` param in ms qualifies (no model-name list).

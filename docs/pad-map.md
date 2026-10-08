@@ -41,7 +41,7 @@ keycodes. What each control *does* is set entirely in the app (macros), never he
 **Reflashing resets Vial edits** (VIA's EEPROM magic is the build date). Bake anything worth
 keeping into `firmware/vial/` defaults, or save a `.vil` in Vial first.
 
-## Raw HID protocol (WM_PROTO 3)
+## Raw HID protocol (WM_PROTO 4)
 
 Host → pad (reply echoes the request id, like VIA):
 
@@ -52,6 +52,7 @@ Host → pad (reply echoes the request id, like VIA):
 | `F0 03` | unsubscribe | — |
 | `F0 04 <layer>` | switch to layer 0–3 (like `TO`); a layer event follows. Proto ≥ 2 | same as `F0 01` |
 | `F0 05 <bpm×10 lo> <hi> <tenths>` | show a tempo on the OLED (e.g. 120.5 BPM) for that long, then the logo again; wakes the OLED. Proto ≥ 3 | same as `F0 01` |
+| `F0 06 <tenths> <label> 00 <value> 00` | show a small label (≤ 14 chars) over a big value (≤ 13 chars) for that long, then the logo again; ASCII, 127 = ∞; wakes the OLED. Sent by the app when a knob moves a value (latest value only while turning fast). Proto ≥ 4 | same as `F0 01` |
 
 Pad → host, unsolicited, **only while subscribed** (so it never blocks when nobody listens):
 

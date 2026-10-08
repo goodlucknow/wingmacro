@@ -75,9 +75,12 @@ const uint16_t PROGMEM encoder_map[][NUM_ENCODERS][NUM_DIRECTIONS] = {
 #endif
 
 #ifdef OLED_ENABLE
-    // WING logo + layer number, or briefly the tapped tempo (F0 05). Glyphs: firmware/tools/gen_oled.py.
+    // WING logo + layer number, or briefly the tapped tempo (F0 05) or a knob's value (F0 06).
+    // Glyphs: firmware/tools/gen_oled.py.
     static uint16_t bpm_x10   = 0;
-    static uint32_t bpm_until = 0;
+    static uint32_t show_until = 0;    /* 0 = logo screen */
+    static bool     show_value = false; /* which screen: tempo or value */
+    static char     val_label[16], val_text[16];
 
     static uint8_t bpm_put(uint8_t *buf, uint8_t x, uint8_t g) {
         for (uint8_t c = 0; c < bpm_glyph_w[g] && x < 128; c++, x++)
@@ -86,26 +89,49 @@ const uint16_t PROGMEM encoder_map[][NUM_ENCODERS][NUM_DIRECTIONS] = {
         return x;
     }
 
-    static void bpm_draw(void) {
+    /* One line of text, ORed in (label and value glyphs sit on different rows of the same columns). */
+    static void text_put(uint8_t *buf, const char *s, const uint16_t *col, const uint8_t *w, const uint8_t *data) {
+        for (uint8_t x = 0; *s && x < 128; s++) {
+            uint8_t ch = (uint8_t)*s;
+            uint8_t g  = (ch < 32 || ch > 127) ? '?' - 32 : ch - 32;
+            uint16_t c0 = pgm_read_word(&col[g]);
+            for (uint8_t c = 0, n = pgm_read_byte(&w[g]); c < n && x < 128; c++, x++)
+                for (uint8_t page = 0; page < 4; page++)
+                    buf[page * 128 + x] |= pgm_read_byte(&data[(c0 + c) * 4 + page]);
+        }
+    }
+
+    static void show_draw(void) {
         static uint8_t buf[512];
         memset(buf, 0, sizeof(buf));
-        uint16_t whole = bpm_x10 / 10;
-        uint8_t  digits[3], n = 0, x = 0;
-        do { digits[n++] = whole % 10; whole /= 10; } while (whole && n < 3);
-        while (n) x = bpm_put(buf, x, digits[--n]);
-        if (bpm_x10 % 10) {                   /* decimal only if there is one (the app sends whole BPM) */
-            x = bpm_put(buf, x, 10);          /* '.' */
-            x = bpm_put(buf, x, bpm_x10 % 10);
+        if (show_value) {
+            text_put(buf, val_label, label_glyph_col, label_glyph_w, label_glyph_data);
+            text_put(buf, val_text, value_glyph_col, value_glyph_w, value_glyph_data);
+        } else {
+            uint16_t whole = bpm_x10 / 10;
+            uint8_t  digits[3], n = 0, x = 0;
+            do { digits[n++] = whole % 10; whole /= 10; } while (whole && n < 3);
+            while (n) x = bpm_put(buf, x, digits[--n]);
+            if (bpm_x10 % 10) {                   /* decimal only if there is one (the app sends whole BPM) */
+                x = bpm_put(buf, x, 10);          /* '.' */
+                x = bpm_put(buf, x, bpm_x10 % 10);
+            }
+            bpm_put(buf, x + 3, 11);              /* "BPM" */
         }
-        bpm_put(buf, x + 3, 11);              /* "BPM" */
         oled_write_raw((const char *)buf, sizeof(buf));  /* only changed bytes are re-sent */
     }
 
+    static void show_for(uint8_t tenths) {
+        show_until = timer_read32() + tenths * 100u;
+        if (!show_until) show_until = 1;
+        oled_on();                                /* wake it if it timed out */
+    }
+
     bool oled_task_user(void) {
-        if (bpm_until && !timer_expired32(timer_read32(), bpm_until)) {
-            bpm_draw();
+        if (show_until && !timer_expired32(timer_read32(), show_until)) {
+            show_draw();
         } else {
-            bpm_until = 0;
+            show_until = 0;
             oled_write_raw_P(oled_frames[get_highest_layer(layer_state) & 3], sizeof(oled_frames[0]));
         }
         return false;
@@ -120,13 +146,14 @@ const uint16_t PROGMEM encoder_map[][NUM_ENCODERS][NUM_DIRECTIONS] = {
  *   F0 03        unsubscribe
  *   F0 04 <l>    switch to layer l (like TO)
  *   F0 05 <bpm*10 lo> <hi> <tenths of a second>   show the tempo on the OLED, then the logo again (proto 3)
+ *   F0 06 <tenths> <label> 00 <value> 00         show a label and value (ASCII, 127 = infinity) (proto 4)
  * Pad -> host (unsolicited, only while subscribed):
  *   F1 01 <id> <pressed> <layer> <row> <col> <seq>   WMxx press/release
  *   F1 02 <layer> <seq>                              layer changed
  * Encoder ticks report press only (row KEYLOC_ENCODER_CW = 253, CCW = 252,
  * col = encoder index).
  */
-#define WM_PROTO 3
+#define WM_PROTO 4
 #define WM_SUBSCRIBE_MS 3000
 #define WM_CMD 0xF0
 #define WM_EVT 0xF1
@@ -176,10 +203,25 @@ void raw_hid_receive_kb(uint8_t *data, uint8_t length) {
             break;
         case 0x05: /* show tempo: F0 05 <bpm*10 lo> <hi> <tenths of a second> */
 #ifdef OLED_ENABLE
-            bpm_x10   = data[2] | (data[3] << 8);
-            bpm_until = timer_read32() + data[4] * 100u;
-            if (!bpm_until) bpm_until = 1;
-            oled_on();                       /* wake it if it timed out */
+            bpm_x10    = data[2] | (data[3] << 8);
+            show_value = false;
+            show_for(data[4]);
+#endif
+            wm_fill_state(data);
+            break;
+        case 0x06: /* show a value: F0 06 <tenths of a second> <label> 00 <value> 00 */
+#ifdef OLED_ENABLE
+        {
+            uint8_t i = 3, n;
+            for (n = 0; i < length && data[i] && n < sizeof(val_label) - 1; ) val_label[n++] = data[i++];
+            val_label[n] = 0;
+            while (i < length && data[i]) i++;  /* skip any overlong rest */
+            i++;
+            for (n = 0; i < length && data[i] && n < sizeof(val_text) - 1; ) val_text[n++] = data[i++];
+            val_text[n] = 0;
+            show_value = true;
+            show_for(data[2]);
+        }
 #endif
             wm_fill_state(data);
             break;

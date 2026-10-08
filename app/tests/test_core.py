@@ -333,3 +333,30 @@ def test_beat_flash_off_flashes_8_beats_after_the_tap():
     on, off = {"do": "tap", "slots": [3]}, {"do": "tap", "slots": [3], "flash": False}
     assert lit(on, 20)                                              # flash on: every beat
     assert all(lit(off, b) for b in range(1, 9)) and not lit(off, 9)  # off: 8 beats after the tap, then rest
+
+
+def test_knob_values_for_the_pad_screen():
+    from wingmacro.actions import Context, a_level, a_param, fmt_value
+    from wingmacro.wing import NodeDef, T_ENUM, T_INT, T_LINF, T_LOGF
+    D = lambda t, unit="": NodeDef("x", "", 0, t, unit, False)
+    assert fmt_value(-144.0) == "-∞ dB" and fmt_value(-12.34) == "-12.3 dB" and fmt_value(3) == "+3.0 dB"
+    assert fmt_value(45.0, D(T_LINF, "ms")) == "45.0 ms" and fmt_value(1250, D(T_LOGF, "ms")) == "1.25 s"
+    assert fmt_value(2.5, D(T_LOGF, "s")) == "2.50 s" and fmt_value(12500, D(T_LOGF, "Hz")) == "12.5 kHz"
+    assert fmt_value("1/4", D(T_ENUM)) == "1/4" and fmt_value(40, D(T_INT, "%")) == "40 %"
+
+    class FakeWing:
+        def __init__(self): self.v = {"/fx/3/pdel": 20.0, "/ch/1/send/2/lvl": -144.0}
+        async def defs(self, node): return [NodeDef("pdel", "PRE DELAY", 1, T_LINF, "ms", False, 0.0, 200.0)]
+        async def value(self, p): return self.v.get(p)
+        async def set(self, p, val): self.v[p] = val
+    shown = []
+    ctx = Context(FakeWing(), lambda: {})
+    ctx.on_value.append(lambda label, text: shown.append((label, text)))
+
+    async def go():
+        await a_param(ctx, {"path": "/fx/3/pdel", "step": 1}, 5)
+        await a_param(ctx, {"path": "/fx/3/pdel", "step": 1, "label": "Verb PD"}, 1)
+        await a_param(ctx, {"path": "/fx/3/pdel", "screen": False}, 1)
+        await a_level(ctx, {"target": "ch/1/send/2"}, 1)   # up from -inf: straight to -89.5
+    asyncio.run(go())
+    assert shown == [("FX3 Pre delay", "25.0 ms"), ("Verb PD", "26.0 ms"), ("CH1 S2 Level", "-89.5 dB")]
