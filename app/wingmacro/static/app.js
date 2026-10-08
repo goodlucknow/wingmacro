@@ -460,6 +460,11 @@ function keyEditor(idx) {
     sect("LED", h("p", { class: "hint" }, "Key colour is the key's resting colour. Macros change it with the Key LED action, e.g. a dim red here and full red in the macro."),
       field("Key colour", colourPicker(m.background, (v) => { m.background = v; }, { allowNone: true, noneLabel: "Pad background" })),
       h("div", { style: "height:10px" }),
+      isTapKey(m) && h("div", { style: "margin-bottom:10px" },
+        field("Beat flash", seg([["always", "Constant"], ["after_tap", "8 beats after tapping"]], m.beat_flash || "always",
+          (v) => { if (v === "always") delete m.beat_flash; else m.beat_flash = v; commit(); }, "sm")),
+        h("p", { class: "hint" }, "Constant: flashes on every beat of the delay's tempo, even when it was set on the console. "
+          + "After tapping: flashes for 8 beats after your last tap, then rests until you tap again.")),
       field("Fire animation", seg(m.mode === "momentary" ? [["none", "None"], ["bloom", "Bloom"]] : [["none", "None"], ["flash", "Flash"], ["bloom", "Bloom"]],
         m.fire_anim === "burst" ? "bloom" : m.fire_anim || (m.mode === "momentary" ? "bloom" : m.hold ? "flash" : "none"), (v) => { m.fire_anim = v; commit(); }, "sm")),
       h("p", { class: "hint" }, m.mode === "momentary" ? "Bloom swells out into the neighbouring keys while the key is held and shrinks back on release."

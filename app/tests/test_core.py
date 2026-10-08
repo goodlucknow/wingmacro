@@ -320,3 +320,15 @@ def test_tap_key_fires_on_key_down_without_cancel_window():
         eng.press(1, 0); assert fired[-1] == "t"
         eng.release(1, 0)
     assert fired == ["t", "t", "t"] and not eng.buttons
+
+
+def test_beat_flash_after_tap_rests_after_8_beats():
+    from wingmacro.leds import Leds
+    from wingmacro.actions import Context
+    ctx = Context(None, lambda: {})
+    L = Leds(lambda: {"pad": {"background": [22, 255, 47]}}, None, None, ctx)
+    ctx.taps[(3,)] = {"t": [100.0], "ms": 500.0}
+    step, base = {"do": "tap", "slots": [3]}, (22, 255, 47)
+    for mode, beat in (("always", 20), ("after_tap", 2), ("after_tap", 20)):
+        flash = L._tap(100.0 + beat * 0.5 + 0.01, base, step, {"beat_flash": mode})
+        assert (flash[2] == 200) == (mode == "always" or beat < 8)

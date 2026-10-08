@@ -81,7 +81,8 @@ LED feedback for `hold`:
   - **Momentary** keys glow at full while held; with `bloom` (their default) the bloom grows and holds at its widest
     while held, shrinking back on release. `none` = just the key's glow.
 - **Tap-tempo keys** flash on the beat (sharp attack, ~0.1 s decay): the tapped tempo, or else the first slot's
-  `time` read from the console.
+  `time` read from the console. `"beat_flash": "after_tap"` flashes only for 8 beats after the last tap, then rests
+  (default `always`).
 - The `led` action's `pulse` effect breathes at about 0.5 Hz.
 - Brightness is the V of an HSV colour (0–200). In the UI, every colour picker has a brightness slider, so a palette colour can be stored at any brightness.
 - Colours are HSV triples (0–255, as in VialRGB) or palette names: the WING's 12 colours in its order (`steel`, `sky`, `indigo`, `teal`, `green`, `olive`, `yellow`, `orange`, `red`, `coral`, `magenta`, `purple`), plus `white` and `off`, with LED values tuned for the pad (orange = the case/UI amber). The older names `crimson`, `amber`, `cyan` and `blue` are still accepted. The firmware caps brightness at 200.
