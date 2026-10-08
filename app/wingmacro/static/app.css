@@ -213,6 +213,10 @@ textarea.raw { width: 100%; min-height: 360px; background: #050505; color: var(-
 .strip:hover { outline: 1px solid var(--text); }
 .strip.on { outline: 2px solid var(--amber); }
 .strip.blank .sn { color: var(--faint); }
+.plist { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px; }
+.pitem { display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; background: var(--raised); border: 1px solid #000; border-radius: 2px; color: var(--text); cursor: pointer; text-align: left; }
+.pitem:hover { background: var(--raised-hi); }
+.pitem.on { background: var(--amber); color: var(--amber-ink); }
 .picksplit { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
 /* --- responsive --------------------------------------------------------------------- */

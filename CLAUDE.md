@@ -130,6 +130,7 @@ CLAUDE.md
 - Rotaries: fader level for any fader type, send level (channel → bus), FX parameter (slot + parameter, picked from a list of the FX currently loaded).
 - The config UI shows only the fields that apply to the chosen action.
 - Connect/refresh polls state and scans the FX slots.
+- **Parameter actions (2026-10-08)**: `param` / `param_cycle` / `param_set` reach any console parameter. The picker browses the console's own tree (`/api/params`, from `0xdd`): strip → group → parameter, plus FX slots and an "All (advanced)" tab. Readable names live in `app/wingmacro/params.py`, falling back to the console's long names, so new firmware params appear without code. Add a name there only for polish. Definitions are cached per node and dropped when that node's `mdl` changes.
 
 ## Open items / next priorities
 

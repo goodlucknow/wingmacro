@@ -96,6 +96,9 @@ Every fader-type target follows the same floor rules.
 | `fx` | `slot`, `param`, `step?` | rotary | The default step depends on the type (int 1, linf 0.01/0.1, fader 0.1 dB). logf steps are proportional to the value, about 1% by default. Skipped silently if the parameter isn't present in the current mode. |
 | `fx_cycle` | `slot`, `param`, `dir: next\|prev` | button | For `str` params. Can also be used as a rotary. |
 | `fx_set` | `slot`, `param`, `value` | button | |
+| `param` | `path`, `step?`, `plabel?` | rotary | Any console parameter (e.g. `/ch/3/send/MX1/lvl`). Steps by its console type, same rules as `fx`. `plabel` is the display name saved by the picker. |
+| `param_cycle` | `path`, `dir: next\|prev`, `plabel?` | button/rotary | Cycles an enum (or small int) parameter. |
+| `param_set` | `path`, `value`, `plabel?` | button | Sets any parameter, coerced to its console type. |
 | `tap` | `slots` (list), `window?` (default 4) | button | Tap time is taken at the key press. Moving average of the last `window` intervals; a gap of 2 s or more starts over. Writes the beat period as-is to `/fx/N/time` of each listed slot. No multiplier: the delay's own `fact` (subdivision) stays on the console and can be mapped like any param. Slots without a `time` param in ms (e.g. BBD-DL) are skipped. Tap state is per slot set; the WING has no global tempo. |
 | `refresh` | — | button | Reconnects if needed, polls state and rescans the FX slots (and so the delays). |
 | `led` | `colour`, `effect?`, `layer?` + `key?` | button | Sets a key's LED (see LED rules). |

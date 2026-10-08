@@ -4,7 +4,7 @@
 
 // ---------------------------------------------------------------------------- state
 const S = {
-  cfg: null, strips: null, pad: null, fx: {}, fxParams: {}, live: null,
+  cfg: null, strips: null, pad: null, fx: {}, fxParams: {}, pnodes: {}, live: null,
   page: "pad", layer: 0, follow: true, selectOnPress: true,
   sel: null,            // {kind:"key", idx} | {kind:"knob", knob}
   macroSel: null, consoles: null, scanning: false,
@@ -46,6 +46,9 @@ const ACT = {
   fx:        { label: "FX parameter", g: "Effects", rot: true, f: [["slot", "fxslot"], ["param", "fxparam"], ["step", "num", { ph: "auto", step: 0.01, min: 0 }]] },
   fx_cycle:  { label: "FX option (cycle)", g: "Effects", rot: true, both: true, f: [["slot", "fxslot"], ["param", "fxenum"], ["dir", "dir"]] },
   fx_set:    { label: "Set FX parameter", g: "Effects", f: [["slot", "fxslot"], ["param", "fxparam"], ["value", "fxvalue"]] },
+  param:     { label: "Parameter", g: "Parameters", rot: true, f: [["path", "param"], ["step", "num", { ph: "auto", step: 0.01, min: 0 }]] },
+  param_cycle: { label: "Parameter option (cycle)", g: "Parameters", rot: true, both: true, f: [["path", "paramenum"], ["dir", "dir"]] },
+  param_set: { label: "Set parameter", g: "Parameters", f: [["path", "param"], ["value", "paramvalue"]] },
   tap:       { label: "Tap tempo", g: "Effects", f: [["slots", "fxslots"], ["window", "num", { ph: "4", step: 1, min: 1 }]] },
   macro:     { label: "Run macro", g: "Macros", f: [["name", "macro"]] },
   led:       { label: "Key LED", g: "Pad", f: [["colour", "ledcolour"], ["effect", "effect"], ["key", "ledtarget"]] },
@@ -214,6 +217,7 @@ function summary(m) {                       // -> {cap, col, name, act}
       case "mgrp": r = { cap: `MGRP.${st.n}`, name: stripInfo("mgrp", st.n).name || `Mute grp ${st.n}`, act: "Mute group" }; break;
       case "level_set": r = { cap: t.cap, col: t.col, name: t.name, act: `Set ${st.db === "-inf" ? "−∞" : (st.db ?? 0) + " dB"}` }; break;
       case "tap": r = { cap: "FX." + (st.slots || []).join(","), name: "Tap", act: "Tap tempo" }; break;
+      case "param": case "param_cycle": case "param_set": { const L = paramLabel(st.path, st.plabel); r = { cap: L.cap, col: L.col, name: L.name, act: L.param || ACT[st.do].label }; break; }
       case "fx_set": case "fx_cycle": r = { cap: `FX.${st.slot}`, name: st.param || "", act: ACT[st.do].label }; break;
       default: r = { cap: "", name: ACT[st.do]?.label || st.do, act: "" };
     }
@@ -226,6 +230,7 @@ function summary(m) {                       // -> {cap, col, name, act}
 }
 function rotSummary(steps) {
   const st = steps?.[0]; if (!st) return "";
+  if (st.do?.startsWith("param")) { const L = paramLabel(st.path, st.plabel); return `${L.name} ${L.param}`; }
   if (st.do === "fx" || st.do === "fx_cycle") return `FX${st.slot} ${st.param || ""}`;
   if (st.target) return `${ACT[st.do].label} ${targetLabel(st.target).name}`;
   return ACT[st.do]?.label || "";
@@ -568,6 +573,8 @@ function fieldFor(st, k, t, o) {
     })));
     case "fxparam": case "fxenum": return field("Parameter", fxParamSelect(st, t === "fxenum"));
     case "fxvalue": return field("Value", fxValueInput(st));
+    case "param": case "paramenum": return field("Parameter", paramBtn(st, t === "paramenum"));
+    case "paramvalue": return field("Value", paramValueInput(st));
     case "ledcolour": return field("Colour", colourPicker(st[k] === "base" ? undefined : st[k], (v) => { st[k] = v ?? "base"; }, { allowNone: true, noneLabel: "Back to the key's own colour" }));
     case "effect": return field("Effect", seg([["solid", "Solid"], ["flash", "Flash"], ["pulse", "Pulse"]], st[k] || "solid", (v) => { st[k] = v; commit(); }, "sm"));
     case "ledtarget": {
@@ -604,14 +611,129 @@ function fxParamSelect(st, enumsOnly) {
     list.map((p) => h("option", { value: p.name, selected: p.name === st.param },
       `${p.longname}${p.unit ? " (" + p.unit + ")" : ""}${p.type === "enum" ? " ▾" : ""}`)));
 }
-function fxValueInput(st) {
-  const p = (fxParams(st.slot) || []).find((x) => x.name === st.param);
+function fxValueInput(st) { return valueInput(st, (fxParams(st.slot) || []).find((x) => x.name === st.param)); }
+function valueInput(st, p) {
   if (!p) return h("input", { type: "text", disabled: true, placeholder: "choose parameter" });
   if (p.type === "enum" || p.type === "fenum")
     return h("select", { onchange: (e) => { st.value = p.type === "fenum" ? +e.target.value : e.target.value; commit(false); } },
       h("option", { value: "" }, "Choose…"), p.items.map((it) => h("option", { value: it, selected: it === st.value }, it)));
   return h("span", {}, numInput(st.value, (v) => { st.value = v; }, { step: p.type === "int" ? 1 : "any", min: p.min, ph: `${+(+p.min).toFixed(2)}–${+(+p.max).toFixed(2)}` }),
     p.unit && h("span", { class: "unit" }, p.unit));
+}
+
+// ---------------------------------------------------------------------------- console parameters
+// Any parameter on the console, browsed from its own tree (/api/params): strip → group → parameter.
+// Labels come from the server (params.py), strip/bus names from the console.
+function pnode(path, redraw) {
+  if (S.pnodes[path] === undefined) {
+    S.pnodes[path] = null;
+    api("/api/params?path=" + encodeURIComponent(path))
+      .then((r) => { S.pnodes[path] = r; (redraw || render)(); }).catch(() => { delete S.pnodes[path]; });
+  }
+  return S.pnodes[path];
+}
+const parentOf = (path) => path.replace(/\/[^/]*$/, "") || "/";
+const STRIP_RE = /^\/(ch|aux|bus|main|mtx|dca)\/(\d+)(\/|$)/;
+function childLabel(parent, c) {           // numbered nodes: show the console's strip names
+  const top = parent.match(/^\/(ch|aux|bus|main|mtx|dca|fx|mgrp)$/);
+  if (top && /^\d+$/.test(c.name)) return top[1] === "fx" ? `FX ${c.name} · ${fxName(+c.name)}` : `${stripCap(top[1], +c.name)} ${stripInfo(top[1], +c.name).name}`;
+  if (/\/send$/.test(parent)) {
+    if (/^\d+$/.test(c.name)) return `Bus ${c.name}${stripInfo("bus", +c.name).name ? " · " + stripInfo("bus", +c.name).name : ""}`;
+    const mx = c.name.match(/^MX(\d+)$/);
+    if (mx) return `Matrix ${mx[1]}${stripInfo("mtx", +mx[1]).name ? " · " + stripInfo("mtx", +mx[1]).name : ""}`;
+  }
+  if (/\/main$/.test(parent) && /^\d+$/.test(c.name)) return `Main ${c.name}${stripInfo("main", +c.name).name ? " · " + stripInfo("main", +c.name).name : ""}`;
+  return /^\d+$/.test(c.name) ? `${c.label === c.name ? "#" : c.label + " "}${c.name}` : c.label;
+}
+function paramLabel(path, plabel) {        // -> {cap, col, name, param}
+  if (!path) return { cap: "—", col: null, name: "Choose…", param: "" };
+  const m = path.match(STRIP_RE), fx = path.match(/^\/fx\/(\d+)\//);
+  if (m) { const t = targetLabel(`${m[1]}/${m[2]}`); return { cap: t.cap, col: t.col, name: t.name, param: plabel || path.slice(m[0].length) }; }
+  if (fx) return { cap: `FX.${fx[1]}`, col: null, name: fxName(+fx[1]), param: plabel || path.slice(fx[0].length) };
+  return { cap: "WING", col: null, name: "", param: plabel || path };
+}
+function paramBtn(st, enumsOnly) {
+  const L = paramLabel(st.path, st.plabel);
+  return h("button", { class: "target" + (st.path ? "" : " unset"), title: st.path || "",
+    onclick: () => pickParam(st.path, (path, plabel) => { st.path = path; st.plabel = plabel; delete st.value; commit(); }, enumsOnly) },
+    h("span", { class: "tc", style: L.col ? `background:${WCOL[L.col]}` : "" }, L.cap),
+    h("span", { class: "tn" }, st.path ? `${L.name}${L.name ? " · " : ""}${L.param}` : "Choose…"));
+}
+function paramDef(path) {
+  const n = path && pnode(parentOf(path));
+  return n && n.params.find((p) => p.name === path.slice(path.lastIndexOf("/") + 1));
+}
+function paramValueInput(st) {
+  if (!st.path) return h("input", { type: "text", disabled: true, placeholder: "choose parameter" });
+  const p = paramDef(st.path);
+  if (p === undefined && S.pnodes[parentOf(st.path)]) return h("span", { class: "hint" }, "Not on the console now (model/mode?)");
+  if (p && p.type === "int" && p.min === 0 && p.max === 1)
+    return seg([[0, "Off"], [1, "On"]], st.value ?? null, (v) => { st.value = v; commit(); }, "sm");
+  return valueInput(st, p);
+}
+function pickParam(current, set, enumsOnly) {
+  const m = $("modal");
+  const close = () => { m.hidden = true; m.replaceChildren(); };
+  const sm = current?.match(STRIP_RE), fm = current?.match(/^\/fx\/(\d+)\//);
+  let tab = sm ? sm[1] : fm ? "fx" : current ? "all" : "ch";
+  let path = current ? parentOf(current) : null;   // node being browsed; null = choose a strip
+  let filter = "";
+  const usable = (p) => !p.readonly && p.type !== "str" && (tab === "all" || !p.name.startsWith("$")) &&
+    (!enumsOnly || p.type === "enum" || p.type === "fenum" || (p.type === "int" && p.max - p.min < 16));
+  const draw = () => {
+    let body;
+    if (!path && tab === "fx") {
+      body = h("div", { class: "strips" }, [...Array(16).keys()].map((i) => h("button", { class: "strip", onclick: () => { path = `/fx/${i + 1}`; draw(); } },
+        h("span", { class: "sc" }, `FX.${i + 1}`), h("span", { class: "sn" }, fxName(i + 1)))));
+    } else if (!path && tab === "all") {
+      path = "/"; return draw();
+    } else if (!path) {
+      const [, , cnt] = KINDS.find((k) => k[0] === tab);
+      body = h("div", { class: "strips" }, [...Array(cnt).keys()].map((i) => {
+        const n = i + 1, s = stripInfo(tab, n);
+        return h("button", { class: "strip" + (s.name ? "" : " blank"), onclick: () => { path = `/${tab}/${n}`; draw(); } },
+          h("span", { class: "sc", style: s.col ? `background:${WCOL[s.col]}` : "" }, stripCap(tab, n)), h("span", { class: "sn" }, s.name || "—"));
+      }));
+    } else {
+      const node = pnode(path, draw);
+      // breadcrumb; the saved label covers the levels below the strip / FX slot (they show separately)
+      const segs = path.split("/").filter(Boolean);
+      const owned = STRIP_RE.test(path + "/") || /^\/fx\/\d+/.test(path);
+      const crumbs = [h("button", { class: "btn sm ghost", onclick: () => { path = tab === "all" ? "/" : null; draw(); } },
+        tab === "all" ? "Console" : tab === "fx" ? "Slots" : "Strips")], labels = [];
+      for (let i = tab === "all" ? 1 : 2; i <= segs.length; i++) {
+        const p = "/" + segs.slice(0, i).join("/"), par = pnode(parentOf(p), draw);
+        const c = par?.nodes.find((x) => x.name === segs[i - 1]);
+        const lab = c ? childLabel(parentOf(p), c) : segs[i - 1];
+        if (!owned || i > 2) labels.push(lab);
+        crumbs.push(h("span", { class: "muted" }, "›"),
+          h("button", { class: "btn sm" + (p === path ? " amber" : ""), onclick: () => { path = p; draw(); } }, lab));
+      }
+      const f = filter.toLowerCase(), hit = (t) => !f || t.toLowerCase().includes(f);
+      body = h("div", {},
+        h("div", { class: "row", style: "gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px" }, crumbs),
+        !node ? h("p", { class: "hint" }, S.live?.wing.connected ? "Loading…" : "WING not connected.") : h("div", {},
+          node.nodes.length > 0 && h("div", { class: "strips", style: "margin-bottom:12px" },
+            node.nodes.filter((c) => (tab === "all" || !c.name.startsWith("$")) && hit(childLabel(path, c) + " " + c.name)).map((c) =>
+              h("button", { class: "strip", onclick: () => { path = `${path === "/" ? "" : path}/${c.name}`; filter = ""; draw(); } },
+                h("span", { class: "sc" }, "▸"), h("span", { class: "sn" }, childLabel(path, c))))),
+          h("div", { class: "plist" }, node.params.filter(usable).filter((p) => hit(p.label + " " + p.name + " " + p.longname)).map((p) =>
+            h("button", { class: "pitem" + (`${path}/${p.name}` === current ? " on" : ""), title: `${path === "/" ? "" : path}/${p.name}  (${p.longname || p.name})`,
+              onclick: () => { set(`${path === "/" ? "" : path}/${p.name}`, [...labels, p.label].join(" › ")); close(); } },
+              h("span", {}, p.label), h("span", { class: "unit" }, [p.unit, p.type === "enum" || p.type === "fenum" ? "▾" : ""].filter(Boolean).join(" "))))),
+          !node.params.filter(usable).length && !node.nodes.length && h("p", { class: "hint" }, "Nothing to control here.")));
+    }
+    const tabs = [...KINDS.map(([k, l]) => [k, l]), ["fx", "FX"], ["all", "ALL (ADVANCED)"]];
+    m.replaceChildren(h("div", { class: "dialog", onclick: (e) => e.stopPropagation() },
+      h("div", { class: "phead" }, enumsOnly ? "SELECT OPTION PARAMETER" : "SELECT PARAMETER",
+        h("div", { class: "right" }, h("input", { type: "search", placeholder: "Filter", value: filter,
+          oninput: (e) => { filter = e.target.value; const pos = e.target.selectionStart; draw(); const i = m.querySelector("input[type=search]"); i.focus(); i.setSelectionRange(pos, pos); } }),
+          h("button", { class: "btn sm", onclick: close }, "Close"))),
+      h("div", { class: "tabs" }, tabs.map(([k, l]) => h("button", { class: tab === k ? "on" : "", onclick: () => { tab = k; path = null; filter = ""; draw(); } }, l))),
+      h("div", { class: "pbody" }, body)));
+  };
+  m.onclick = close;
+  draw(); m.hidden = false;
 }
 
 function targetBtn(t, set, chOnly) {
