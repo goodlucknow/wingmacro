@@ -117,6 +117,25 @@ function dropdown(sel) {
   return h("span", { class: "dd" }, sel, btn);
 }
 document.addEventListener("click", ddClose);
+
+// In-app replacements for the browser's alert and confirm boxes: resolve true on OK, false on Cancel / Esc / outside click.
+function appDialog(title, text, { ok = "OK", cancel = null, danger = false } = {}) {
+  return new Promise((done) => {
+    const m = $("modal");
+    const close = (v) => { m.hidden = true; m.replaceChildren(); m.onclick = null; removeEventListener("keydown", key); done(v); };
+    const key = (e) => { if (e.key === "Escape") close(false); else if (e.key === "Enter") close(true); };
+    m.replaceChildren(h("div", { class: "dialog msg", onclick: (e) => e.stopPropagation() },
+      h("div", { class: "phead" }, title),
+      h("div", { class: "pbody" }, String(text).split("\n").map((t) => h("p", {}, t))),
+      h("div", { class: "dfoot" }, cancel && h("button", { class: "btn", onclick: () => close(false) }, cancel),
+        h("button", { class: "btn " + (danger ? "on-red" : "amber"), onclick: () => close(true) }, ok))));
+    m.onclick = () => close(false);
+    m.hidden = false; addEventListener("keydown", key);
+    m.querySelector(".dfoot .btn:last-child").focus();
+  });
+}
+const appAlert = (text, title = "WING MACRO") => appDialog(title, text);
+const appConfirm = (text, title, ok = "OK") => appDialog(title, text, { ok, cancel: "Cancel", danger: true });
 document.addEventListener("keydown", (e) => ddOpen?.key(e));
 addEventListener("resize", ddClose);
 document.addEventListener("scroll", (e) => { if (ddOpen && !ddOpen.pop.contains(e.target)) ddClose(); }, true);
@@ -899,8 +918,8 @@ function renderMacros() {
       if (!renameMacro(S.macroSel, e.target.value.trim())) e.target.value = S.macroSel; commit(); } });
     editor = [h("div", { class: "phead" }, S.macroSel.toUpperCase(), h("div", { class: "right" },
       h("button", { class: "btn sm", title: "Make a copy to edit separately", onclick: () => { S.macroSel = duplicateMacro(S.macroSel); commit(); } }, "Duplicate"),
-      h("button", { class: "btn sm danger", onclick: () => {
-        if (users.length && !confirm(`"${S.macroSel}" is used by ${users.join(", ")}. Delete anyway? Those controls will stop working.`)) return;
+      h("button", { class: "btn sm danger", onclick: async () => {
+        if (users.length && !await appConfirm(`"${S.macroSel}" is used by ${users.join(", ")}.\nThose controls will stop working.`, "Delete macro?", "Delete")) return;
         delete S.cfg.macros[S.macroSel]; S.macroSel = null; commit(); } }, "Delete"))),
     h("div", { class: "pbody" },
       sect("Name", nameIn),
@@ -957,8 +976,8 @@ function renderSettings() {
       const cfg = JSON.parse(await f.text());
       const r = await api("/api/config", { method: "PUT", body: JSON.stringify(cfg) });
       if (!r.ok) throw new Error(r.error);
-      S.cfg = cfg; S.sel = null; S.macroSel = null; alert("Config imported."); render();
-    } catch (err) { alert("Import failed: " + err.message); }
+      S.cfg = cfg; S.sel = null; S.macroSel = null; appAlert("Config imported."); render();
+    } catch (err) { appAlert(err.message, "Import failed"); }
     e.target.value = "";
   } });
   const raw = h("textarea", { class: "raw", spellcheck: "false" }, JSON.stringify(S.cfg, null, 2));
@@ -967,9 +986,9 @@ function renderSettings() {
     try {
       const r = await api("/api/pad/restore", { method: "POST", body: await f.text() });
       if (!r.ok) throw new Error(r.error);
-      alert(`Restored: ${r.changed} change(s) written to the pad.${r.note ? "\n" + r.note : ""}`);
+      appAlert(`Restored: ${r.changed} change(s) written to the pad.${r.note ? "\n" + r.note : ""}`);
       S.vial = null; refreshMeta();
-    } catch (err) { alert("Restore failed: " + err.message); }
+    } catch (err) { appAlert(err.message, "Restore failed"); }
     e.target.value = "";
   } });
   return h("div", { class: "cols", style: "grid-template-columns:1fr 1fr;grid-auto-rows:min-content" },
@@ -994,7 +1013,7 @@ function renderSettings() {
         h("div", { class: "row" },
           h("button", { class: "btn light", onclick: async () => {
             const r = await fetch("/api/pad/backup"); const b = await r.json();
-            if (!r.ok) { alert("Backup failed: " + b.error); return; }
+            if (!r.ok) { appAlert(b.error, "Backup failed"); return; }
             const a = h("a", { href: URL.createObjectURL(new Blob([JSON.stringify(b, null, 1)], { type: "application/json" })),
               download: `kb16-pad-${new Date().toISOString().slice(0, 10)}.json` });
             a.click(); URL.revokeObjectURL(a.href);
@@ -1007,7 +1026,7 @@ function renderSettings() {
             const r = await api("/api/config", { method: "PUT", body: JSON.stringify(cfg) });
             if (!r.ok) throw new Error(r.error);
             S.cfg = cfg; render();
-          } catch (err) { alert("Not applied: " + err.message); }
+          } catch (err) { appAlert(err.message, "Not applied"); }
         } }, "Apply"))),
     ]));
 }
