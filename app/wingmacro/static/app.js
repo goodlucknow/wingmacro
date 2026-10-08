@@ -45,7 +45,7 @@ const ACT = {
   gain:      { label: "Input gain", g: "Levels", rot: true, f: [["target", "targetch"], ["step", "num", { unit: "dB", ph: "0.5", step: 0.5, min: 0 }]] },
   param:     { label: "Parameter", g: "Parameters", rot: true, f: [["path", "param"], ["step", "num", { ph: "auto", step: 0.01, min: 0 }]] },
   param_set: { label: "Set parameter", g: "Parameters", f: [["path", "param"], ["op", "paramop"]] },
-  tap:       { label: "Tap tempo", g: "Effects", f: [["slots", "fxslots"], ["window", "num", { label: "Average", unit: "taps", ph: "4", step: 1, min: 1 }], ["flash", "beatflash"]] },
+  tap:       { label: "Tap tempo", g: "Effects", f: [["slots", "fxslots"], ["window", "tapavg"]] },
   macro:     { label: "Run macro", g: "Macros", f: [["name", "macro"]] },
   led:       { label: "Key LED", g: "Pad", f: [["colour", "ledcolour"], ["effect", "effect"], ["key", "ledtarget"]] },
   wait:      { label: "Wait", g: "System", f: [["ms", "num", { unit: "ms", def: 500, step: 50, min: 0 }]] },
@@ -619,9 +619,11 @@ function fieldFor(st, k, t, o) {
     })));
     case "param": return field("Parameter", paramBtn(st));
     case "paramop": return paramOp(st);
-    case "beatflash": return field("\u00a0", h("button", { class: "btn sm" + (st[k] !== false ? " amber" : ""),
-      title: "On: flashes on every beat. Off: flashes for 8 beats after the last tap, then rests.",
-      onclick: () => { if (st[k] === false) delete st[k]; else st[k] = false; commit(); } }, "Flash"));
+    case "tapavg": return field("Average", h("span", { class: "row", style: "gap:6px;align-items:center;flex-wrap:nowrap" },
+      numInput(st.window, (v) => { st.window = v; }, { ph: "4", step: 1, min: 1 }), h("span", { class: "unit" }, "taps"),
+      h("button", { class: "btn sm" + (st.flash !== false ? " amber" : ""), style: "margin-left:6px",
+        title: "On: flashes on every beat. Off: flashes for 8 beats after the last tap, then rests.",
+        onclick: () => { if (st.flash === false) delete st.flash; else st.flash = false; commit(); } }, "Flash")));
     case "ledcolour": return field("Colour", colourPicker(st[k] === "base" ? undefined : st[k], (v) => { st[k] = v ?? "base"; }, { allowNone: true, noneLabel: "Back to the key's own colour" }));
     case "effect": return field("Effect", seg([["solid", "Solid"], ["flash", "Flash"], ["pulse", "Pulse"]], st[k] || "solid", (v) => { st[k] = v; commit(); }, "sm"));
     case "ledtarget": {
