@@ -22,7 +22,16 @@ Pad is plugged into the container, firmware proto 4. Console: WING Rack "FRack" 
 - `/api/params?path=/fx/N` returns the console's 0xdd defs (name, longname, type, unit, min/max, items).
 - Config is versioned (`config.py`, now v5); changes to stored steps need a migration if the shape changes.
 
-## Proposed fix (check with the user before building the matching part)
+## Decisions (user, 2026-10-08)
+
+- Auto-matching to the equivalent param in the new model: **yes, when sensible** (e.g. Ultratap Repeats ↔ WING
+  delay Feed). The user's intuition: a console control/CC assigned to feedback on one delay model would land on
+  repeats on another. **Check that idea in the survey**: the console may address FX params by position
+  (`NodeDef.idx`); if equivalent params share an index across related models, use that as a matching signal
+  (after same key, alongside the alias table), but confirm on real data before trusting it.
+- Knob option lists **stop at the ends by default**; per-step **Wrap** toggle to turn wrapping on.
+
+## Proposed fix
 
 1. **Store what was picked**: on save, the picker records `model` (e.g. `TAP-DL`), the param key and its console
    longname/unit/type with the step (e.g. `pref: {model, key, longname, unit, type}`).
