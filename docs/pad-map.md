@@ -41,7 +41,7 @@ keycodes. What each control *does* is set entirely in the app (macros), never he
 **Reflashing resets Vial edits** (VIA's EEPROM magic is the build date). Bake anything worth
 keeping into `firmware/vial/` defaults, or save a `.vil` in Vial first.
 
-## Raw HID protocol (WM_PROTO 2)
+## Raw HID protocol (WM_PROTO 3)
 
 Host → pad (reply echoes the request id, like VIA):
 
