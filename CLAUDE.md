@@ -98,6 +98,9 @@ CLAUDE.md
   - `logf` (frequencies, times) needs **value-proportional stepping**. Fixed linear steps failed at the high end of the range.
   - Some parameters depend on the effect's mode and aren't always present (e.g. ST-DL offset). Handle this gracefully.
   - `str` parameters need a way to cycle through their options.
+  - **Model changes (decided/built 2026-10-08)**: the WING maps its own controls by param *position*, so positions aren't semantic. Mapped steps remember what was picked (`pref`) and follow to the equivalent in the new model: key → alias role → long name → same position → nothing ("n/a" on the pad, never a silent no-op). See `docs/config-model.md`.
+  - Knobs on option lists **stop at the ends** by default; per-step Wrap toggle.
+- **linf is quantized** by the console to its `steps` grid (verified 2026-10-08: FX feed 1 %, dyn thr 0.5 dB, pan 1, trim 0.1). Writes in between snap, so a knob tick must move at least one grid step.
 - **Tap tempo**:
   - Moving average of the tap intervals (window 4), reset after a gap of 2 s or more. Timed from key press. Rounded to a whole BPM (decided 2026-10-08), shown on the pad's OLED for 2 s. Knob turns likewise show the parameter's label and value for 1.5 s (firmware proto 4, `F0 06`); main use: FX params like reverb pre-delay/decay, delay feedback/subdivision.
   - Per key, per FX slot (a tap macro lists one or more slots). The WING has no global tempo; don't emulate one.
