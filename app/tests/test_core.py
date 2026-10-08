@@ -51,14 +51,14 @@ def make_engine(buttons, **pad):
 
 
 def test_press_fires_on_release():
-    eng, fired = make_engine({"1": {"trigger": "press", "do": [{"v": "a"}]}})
+    eng, fired = make_engine({"1": {"mode": "single", "do": [{"v": "a"}]}})
     eng.press(1, 0); assert fired == []
     eng.release(1, 0); assert fired == ["a"]
 
 
 def test_hold_arm_fire_and_cancel():
     async def go():
-        eng, fired = make_engine({"1": {"trigger": "hold", "hold_ms": 50, "do": [{"v": "h"}]}})
+        eng, fired = make_engine({"1": {"mode": "single", "hold": True, "hold_ms": 50, "do": [{"v": "h"}]}})
         eng.press(1, 0); await asyncio.sleep(0.01); eng.release(1, 0)   # too short
         await asyncio.sleep(0.15); assert fired == []
         eng.press(1, 0); await asyncio.sleep(0.06); eng.release(1, 0)   # armed
@@ -71,7 +71,7 @@ def test_hold_arm_fire_and_cancel():
 
 def test_toggle_and_layer_fallback():
     cfg = {"pad": {}, "macros": {}, "layers": {"0": {"buttons": {"1": {
-        "toggle": True, "do": [{"v": "On"}], "off": [{"v": "Off"}]}}}, "2": {"buttons": {}}}}
+        "mode": "toggle", "do": [{"v": "On"}], "off": [{"v": "Off"}]}}}, "2": {"buttons": {}}}}
     eng = Engine(lambda: cfg, ctx=None)
     fired = []
     eng.run = lambda steps, key, *a, **k: fired.append(steps[0]["v"])
@@ -105,7 +105,7 @@ def test_tap_moving_average():
     assert len(written) == 5
 
 
-def test_momentary_restores_on_release():
+def test_momentary_runs_on_then_off():
     from wingmacro.actions import Context
 
     class FakeWing:
@@ -114,15 +114,16 @@ def test_momentary_restores_on_release():
         async def value(self, p): return self.v.get(p)
         async def set(self, p, val): self.v[p] = val
     w = FakeWing()
-    cfg = {"pad": {}, "macros": {}, "layers": {"0": {"buttons": {"1": {"trigger": "momentary", "do": [
-        {"do": "mute", "target": "ch/40", "op": "off"}, {"do": "mgrp", "n": 2, "op": "on"}]}}}}}
+    cfg = {"pad": {}, "macros": {}, "layers": {"0": {"buttons": {"1": {"mode": "momentary", "do": [
+        {"do": "mute", "target": "ch/40", "op": "off"}, {"do": "mgrp", "n": 2, "op": "on"}],
+        "off": [{"do": "mgrp", "n": 2, "op": "off"}, {"do": "mute", "target": "ch/40", "op": "on"}]}}}}}
     eng = Engine(lambda: cfg, Context(w, lambda: cfg))
 
     async def go():
         eng.press(1, 0); await asyncio.sleep(0.02)
         assert w.v == {"/ch/40/mute": 0, "/mgrp/2/mute": 1}   # active on key down
         eng.release(1, 0); await asyncio.sleep(0.02)
-        assert w.v == {"/ch/40/mute": 1, "/mgrp/2/mute": 0}   # put back on release
+        assert w.v == {"/ch/40/mute": 1, "/mgrp/2/mute": 0}   # Off list on key up
     asyncio.run(go())
 
 
@@ -133,17 +134,18 @@ def test_led_actions_digico_style():
         async def value(self, p): return 0
         async def set(self, p, v): pass
     cfg = {"pad": {}, "macros": {"lit": {"steps": [{"do": "led", "colour": "green"}]}}, "layers": {"0": {"buttons": {
-        "1": {"toggle": True, "do": [{"do": "macro", "name": "lit"}, {"do": "led", "colour": "red"}],
+        "1": {"mode": "toggle", "do": [{"do": "macro", "name": "lit"}, {"do": "led", "colour": "red"}],
               "off": [{"do": "led", "colour": "base"}]},
-        "2": {"trigger": "momentary", "do": [{"do": "led", "colour": "amber", "effect": "flash"},
-                                             {"do": "led", "colour": "blue", "layer": 1, "key": 1}]}}}}}
+        "2": {"mode": "momentary", "do": [{"do": "led", "colour": "amber", "effect": "flash"},
+                                          {"do": "led", "colour": "blue", "layer": 1, "key": 1}],
+              "off": [{"do": "led", "colour": "base"}, {"do": "led", "colour": "red", "layer": 1, "key": 1}]}}}}}
     ctx = Context(FakeWing(), lambda: cfg)
     eng = Engine(lambda: cfg, ctx)
 
     async def go():
         eng.press(1, 0); eng.release(1, 0); await asyncio.sleep(0.01)   # On: macro (green) then red
         assert ctx.led_state[(0, 0)] == ("red", "solid")
-        eng.press(1, 0); eng.release(1, 0); await asyncio.sleep(0.01)   # automatic Off: back to key colour
+        eng.press(1, 0); eng.release(1, 0); await asyncio.sleep(0.01)   # Off: back to key colour
         assert (0, 0) not in ctx.led_state
         eng.press(1, 0); eng.release(1, 0); await asyncio.sleep(0.01)
         eng.press(2, 1); await asyncio.sleep(0.01)                     # momentary: own key + key 1
@@ -164,14 +166,14 @@ def test_migration():
         "2": {"do": {"toggle": ["a", [{"do": "refresh"}]]}, "led": {"bind": "connected"}},
         "3": {"do": "a"}}, "encoders": {}}},
         "macros": {"a": {"retrigger": "ignore", "steps": [{"do": "softmute", "target": "aux/1", "op": "down", "time": 4}]}}}
-    assert migrate(cfg) and cfg["version"] == 4
+    assert migrate(cfg) and cfg["version"] == 5
     assert cfg["macros"]["a"]["steps"] == [{"do": "fade", "target": "aux/1", "time": 4, "db": "-inf"},
                                            {"do": "mute", "target": "aux/1", "op": "on"}]
     b = cfg["layers"]["0"]["buttons"]
-    # v4: the old automatic Off is written out; custom Off lists are kept
-    assert b["1"] == {"do": [{"do": "mute", "target": "ch/1", "op": "on"}], "toggle": True,
+    # v4: the old automatic Off is written out; custom Off lists are kept. v5: mode instead of trigger/toggle
+    assert b["1"] == {"do": [{"do": "mute", "target": "ch/1", "op": "on"}], "mode": "toggle",
                       "off": [{"do": "mute", "target": "ch/1", "op": "off"}]}
-    assert b["2"] == {"do": [{"do": "macro", "name": "a"}], "off": [{"do": "refresh"}], "toggle": True}
+    assert b["2"] == {"do": [{"do": "macro", "name": "a"}], "off": [{"do": "refresh"}], "mode": "toggle"}
     assert b["3"]["do"] == [{"do": "macro", "name": "a"}] and "retrigger" not in cfg["macros"]["a"]
 
 
@@ -194,7 +196,7 @@ def test_burst_radiates_from_fired_key():
     ctx = Context(None, lambda: cfg)
     leds = Leds(lambda: cfg, FakePad(), None, ctx)
     leds.engine = Engine(lambda: cfg, ctx, leds)
-    leds.transient(5, "confirm", None, {"trigger": "hold", "fire_anim": "burst", "hold_colour": "red"})
+    leds.transient(5, "confirm", None, {"hold": True, "fire_anim": "burst", "hold_colour": "red"})
     t0 = leds.bursts[0][1]
     near = leds.frame(t0 + 0.2)                     # front past the neighbours of key 6, not the far corner
     assert near[4][2] > 90 and near[6][2] > 90 and near[15][2] == 0
@@ -214,7 +216,7 @@ def test_param_labels():
 
 
 def test_param_actions_follow_console_defs():
-    from wingmacro.actions import Context, a_param, a_param_cycle, a_param_set
+    from wingmacro.actions import Context, a_param, a_param_set
     from wingmacro.wing import NodeDef, T_LINF, T_ENUM, T_INT
 
     class FakeWing:
@@ -231,9 +233,31 @@ def test_param_actions_follow_console_defs():
     async def go():
         await a_param(ctx, {"path": "ch/1/dyn/thr"}, 3)            # linf, range >= 10: 0.1 steps
         await a_param(ctx, {"path": "/ch/1/dyn/thr", "step": 50}, 1)  # clamped to max
-        await a_param_cycle(ctx, {"path": "/ch/1/dyn/det"})
+        await a_param_set(ctx, {"path": "/ch/1/dyn/det", "op": "inc"})
+        await a_param_set(ctx, {"path": "/ch/1/dyn/det", "op": "inc"})   # stops at the end (no wrap)
         await a_param_set(ctx, {"path": "/ch/1/dyn/on", "value": "1"})
     asyncio.run(go())
     assert w.v == {"/ch/1/dyn/thr": 0.0, "/ch/1/dyn/det": "RMS", "/ch/1/dyn/on": 1}
     ctx.invalidate("/ch/1")
     assert ctx.node_defs_cache == {}
+
+
+def test_v5_key_modes_and_fx_actions():
+    from wingmacro.config import migrate
+    cfg = {"version": 4, "macros": {"m": {"steps": [{"do": "fx_set", "slot": 2, "param": "time", "value": 300}]}},
+           "layers": {"0": {"buttons": {
+               "1": {"trigger": "hold", "toggle": True, "do": [{"do": "fx_cycle", "slot": 3, "param": "fact", "dir": "prev"}], "off": []},
+               "2": {"trigger": "momentary", "do": [{"do": "mute", "target": "ch/9", "op": "off"}]},
+               "3": {"trigger": "press", "do": [{"do": "refresh"}], "off": [{"do": "wait"}]}},
+               "encoders": {"left": {"turn": [{"do": "fx", "slot": 1, "param": "dcy", "step": 0.1},
+                                              {"do": "param_cycle", "path": "/ch/1/eq/mdl"}]}}}}}
+    assert migrate(cfg) and cfg["version"] == 5
+    b = cfg["layers"]["0"]["buttons"]
+    assert b["1"] == {"mode": "toggle", "hold": True, "off": [],
+                      "do": [{"do": "param_set", "path": "/fx/3/fact", "op": "dec", "wrap": True}]}
+    assert b["2"] == {"mode": "momentary", "do": [{"do": "mute", "target": "ch/9", "op": "off"}],
+                      "off": [{"do": "mute", "target": "ch/9", "op": "on"}]}
+    assert b["3"] == {"mode": "single", "do": [{"do": "refresh"}]}
+    assert cfg["layers"]["0"]["encoders"]["left"]["turn"] == [
+        {"do": "param", "path": "/fx/1/dcy", "step": 0.1}, {"do": "param", "path": "/ch/1/eq/mdl"}]
+    assert cfg["macros"]["m"]["steps"] == [{"do": "param_set", "path": "/fx/2/time", "value": 300}]

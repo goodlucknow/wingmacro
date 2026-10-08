@@ -64,7 +64,6 @@ class Context:
         self.node_defs_cache = {}  # node path -> {child name: NodeDef}
         self.taps = {}  # slots key -> {"t": [press times], "ms": period or None}
         self.led_state = {}  # (mapping layer, key index) -> (colour, effect), set by `led` actions
-        self.led_record = None  # during a momentary press: {key: previous state} for restore
         self.on_beat = []  # fn(period_s)
 
     async def node_defs(self, node):
@@ -228,8 +227,6 @@ async def a_led(ctx, p, ticks=None):
         log.info("led: no target key (knob actions must name a key)")
         return
     target = tuple(target)
-    if ctx.led_record is not None and target not in ctx.led_record:
-        ctx.led_record[target] = ctx.led_state.get(target)
     if p.get("colour", "base") == "base":
         ctx.led_state.pop(target, None)
     else:
@@ -244,13 +241,13 @@ async def a_set(ctx, p, ticks=None):
     await ctx.wing.set(p["path"], p["value"])
 
 
-def fx_path(p):
-    return f"/fx/{int(p['slot'])}/{p['param']}"
-
-
 async def a_param_set(ctx, p, ticks=None):
-    """Set any console parameter to a value, coerced to the parameter's type."""
+    """Set any console parameter: to a value (coerced to its type), or one step up/down
+    (`op`: inc | dec; option lists move one option, stopping at the ends unless `wrap`)."""
     path = "/" + p["path"].strip("/")
+    if p.get("op") in ("inc", "dec"):
+        await _param_step(ctx, path, p, 1 if p["op"] == "inc" else -1, wrap=bool(p.get("wrap")))
+        return
     d = await ctx.param_def(path)
     if d is None or d.readonly:
         log.info("%s: no writable param (model/mode?)", path)
@@ -261,19 +258,6 @@ async def a_param_set(ctx, p, ticks=None):
     elif d.type in (W.T_LINF, W.T_LOGF, W.T_FADER):
         v = float(v)
     await ctx.wing.set(path, v)
-
-
-async def a_fx_set(ctx, p, ticks=None):
-    await a_param_set(ctx, dict(p, path=fx_path(p)))
-
-
-async def a_param_cycle(ctx, p, ticks=None):
-    n = ticks if ticks is not None else (-1 if p.get("dir") == "prev" else 1)
-    await _param_step(ctx, p["path"], p, n)
-
-
-async def a_fx_cycle(ctx, p, ticks=None):
-    await a_param_cycle(ctx, dict(p, path=fx_path(p)), ticks)
 
 
 # --- rotary actions -------------------------------------------------------
@@ -313,13 +297,11 @@ async def a_param(ctx, p, ticks):
     await _param_step(ctx, p["path"], p, ticks)
 
 
-async def a_fx(ctx, p, ticks):
-    await _param_step(ctx, fx_path(p), p, ticks)
-
-
-async def _param_step(ctx, path, p, ticks):
-    """Step any parameter by `ticks`, by its console type: enums cycle, logf is value-proportional,
-    faders keep the -inf floor rules, numbers step by `step` (default by type) within min/max."""
+async def _param_step(ctx, path, p, ticks, wrap=None):
+    """Step any parameter by `ticks`, by its console type: option lists move by option, logf is
+    value-proportional, faders keep the -inf floor rules, numbers step by `step` (default by type)
+    within min/max. `wrap`: None (knobs) = option lists wrap round, numbers stop at the ends;
+    True / False (keys) = both wrap / both stop."""
     path = "/" + path.strip("/")
     d = await ctx.param_def(path)
     if d is None or d.readonly or d.type in (W.T_NODE, W.T_STR):
@@ -334,7 +316,8 @@ async def _param_step(ctx, path, p, ticks):
             i = items.index(cur)
         except ValueError:
             i = min(range(len(items)), key=lambda k: abs(items[k] - cur)) if d.type == W.T_FENUM else 0
-        new = items[(i + ticks) % len(items)]
+        j = i + ticks
+        new = items[j % len(items) if wrap is not False else min(max(j, 0), len(items) - 1)]
     elif d.type == W.T_LOGF:
         pct = float(p.get("step", 0.01))  # value-proportional
         new = cur * (1 + pct) ** ticks
@@ -342,6 +325,8 @@ async def _param_step(ctx, path, p, ticks):
         new = step_level(cur, ticks * float(p.get("step", 0.1)))
     else:
         new = cur + ticks * float(p.get("step", default_step(d) or 1))
+    if wrap is True and d.type == W.T_INT and d.min is not None and not d.min <= new <= d.max:
+        new = d.min if new > d.max else d.max
     if d.type in (W.T_INT, W.T_LINF, W.T_LOGF) and d.min is not None:
         new = min(max(new, d.min), d.max)
     if d.type == W.T_INT:
@@ -358,8 +343,7 @@ async def a_macro(ctx, p, ticks=None):
 
 ACTIONS = {
     "mute": a_mute, "fade": a_fade, "mgrp": a_mgrp, "level_set": a_level_set,
-    "level": a_level, "gain": a_gain, "fx": a_fx, "fx_cycle": a_fx_cycle, "fx_set": a_fx_set,
-    "param": a_param, "param_cycle": a_param_cycle, "param_set": a_param_set,
+    "level": a_level, "gain": a_gain, "param": a_param, "param_set": a_param_set,
     "tap": a_tap, "refresh": a_refresh, "wait": a_wait, "set": a_set, "led": a_led, "macro": a_macro,
 }
-ROTARY = {"level", "gain", "fx", "fx_cycle", "param", "param_cycle"}
+ROTARY = {"level", "gain", "param"}

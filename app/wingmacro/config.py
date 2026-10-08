@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 DEFAULT = {
-    "version": 4,
+    "version": 5,
     "console": {"ip": "", "discover": True},
     "pad": {"background": [22, 255, 47], "cancel_ms": 400, "hold_ms": 800},
     "macros": {},
@@ -112,6 +112,41 @@ def _mappings(cfg):
         yield from (e["push"] for e in layer.get("encoders", {}).values() if "push" in e)
 
 
+def _key_mode_v5(m):
+    """v4 -> v5: trigger (press | hold | momentary) + toggle -> mode (single | toggle | momentary) + hold."""
+    trig = m.pop("trigger", "press")
+    toggle = m.pop("toggle", False)
+    if trig == "momentary":
+        m["mode"] = "momentary"
+        m.setdefault("off", _auto_off(m.get("do", [])))  # the old release put things back by itself
+    else:
+        m["mode"] = "toggle" if toggle else "single"
+        if trig == "hold":
+            m["hold"] = True
+    if m["mode"] == "single":
+        m.pop("off", None)
+
+
+def _steps_v5(steps, rotary):
+    """v4 -> v5: FX actions become parameter actions; the cycle actions become a knob's Parameter
+    or a key's Set parameter (next/previous, wrapping as cycle did)."""
+    out = []
+    for st in steps or []:
+        d = st.get("do")
+        if d in ("fx", "fx_cycle", "fx_set"):
+            st = {k: v for k, v in st.items() if k not in ("slot", "param")} | {"path": f"/fx/{st.get('slot')}/{st.get('param')}"}
+            d = {"fx": "param", "fx_cycle": "param_cycle", "fx_set": "param_set"}[d]
+            st["do"] = d
+        if d == "param_cycle":
+            if rotary:
+                st = {k: v for k, v in st.items() if k != "dir"} | {"do": "param"}
+            else:
+                st = {k: v for k, v in st.items() if k != "dir"} | {
+                    "do": "param_set", "op": "dec" if st.get("dir") == "prev" else "inc", "wrap": True}
+        out.append(st)
+    return out
+
+
 def migrate(cfg):
     changed = _migrate_v1(cfg)
     if cfg.get("version", 1) < 3:
@@ -130,6 +165,21 @@ def migrate(cfg):
             if m.pop("off_auto", True) is not False and m.get("toggle"):  # v3 default was automatic
                 m["off"] = _auto_off(m.get("do", []))
         cfg["version"] = 4
+        changed = True
+    if cfg.get("version", 1) < 5:
+        for m in _mappings(cfg):
+            _key_mode_v5(m)
+            for k in ("do", "off"):
+                if k in m:
+                    m[k] = _steps_v5(m[k], False)
+        for layer in cfg.get("layers", {}).values():
+            for e in layer.get("encoders", {}).values():
+                for k in ("turn", "push_turn"):
+                    if k in e:
+                        e[k] = _steps_v5(e[k], True)
+        for mac in cfg.get("macros", {}).values():
+            mac["steps"] = _steps_v5(mac.get("steps"), False)
+        cfg["version"] = 5
         changed = True
     return changed
 

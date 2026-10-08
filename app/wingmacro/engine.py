@@ -1,6 +1,5 @@
 """Pad events -> mappings -> macros. See docs/config-model.md."""
 import asyncio
-import copy
 import logging
 import time
 
@@ -17,22 +16,6 @@ ACCEL = {
     "fine": [(0.03, 4), (0.06, 2)],
     "normal": [(0.02, 10), (0.04, 5), (0.08, 2)],
 }
-
-
-class Recorder:
-    """Wraps the WING client for a momentary press: remembers each path's value before its
-    first write, so the release can put everything back."""
-
-    def __init__(self, wing, record):
-        self._w, self._rec = wing, record
-
-    def __getattr__(self, name):
-        return getattr(self._w, name)
-
-    async def set(self, path, value):
-        if path not in self._rec:
-            self._rec[path] = await self._w.value(path)
-        return await self._w.set(path, value)
 
 
 class Engine:
@@ -67,7 +50,7 @@ class Engine:
         """Steps a button / knob-push mapping runs now. A toggle mapping keeps its own on/off state
         (deliberately not read from the console) and runs its On list, then its Off list."""
         on_steps = m.get("do") or []
-        if not m.get("toggle"):
+        if m.get("mode") != "toggle":
             return on_steps
         on = self.toggles.get(key, False)
         if advance:
@@ -109,7 +92,7 @@ class Engine:
                 if st.get("timer"):
                     st["timer"].cancel()
                 if st["phase"] == "held":
-                    asyncio.create_task(self._momentary_end(st))
+                    self._momentary_end(st)  # pad gone mid-press: still run the key-up list
             self.buttons.clear()
 
     def _log(self, ev):
@@ -131,10 +114,9 @@ class Engine:
         pad = self.cfg().get("pad", {})
         st = {"phase": "pressed", "map": m, "layer": l, "wm": wm,
               "idx": m.get("led_index", idx), "t0": time.monotonic()}
-        if m.get("trigger", "press") == "momentary":
-            self._led(st, "confirm")
+        if m.get("mode") == "momentary":
             self._momentary_start(st)
-        elif m.get("trigger", "press") == "hold":
+        elif m.get("hold"):
             st["phase"] = "holding"
             st["hold"] = m.get("hold_ms", pad.get("hold_ms", 800)) / 1000
             self._led(st, "progress", st["hold"])
@@ -149,7 +131,7 @@ class Engine:
             self.fire(st)
         elif st["phase"] == "held":
             del self.buttons[wm]
-            asyncio.create_task(self._momentary_end(st))
+            self._momentary_end(st)
         elif st["phase"] == "cancelling":
             del self.buttons[wm]
         elif st["phase"] == "holding":
@@ -169,7 +151,7 @@ class Engine:
             self.fire(st)
 
     def fire(self, st):
-        if st["map"].get("trigger", "press") != "hold":  # hold keys animate in _armed_fire
+        if not st["map"].get("hold"):  # hold keys animate in _armed_fire
             self._led(st, "confirm")
         key = (st["layer"], st["wm"])
         self.run(self.steps_for(st["map"], key, advance=True), key, t0=st["t0"], src=self._src(st))
@@ -180,38 +162,14 @@ class Engine:
         return (st["layer"], st["idx"]) if st.get("idx") is not None else None
 
     def _momentary_start(self, st):
-        """Run on key down. Steps run against a Recorder so the release can restore."""
+        """Key down: run the On list. Key up runs the Off list under the same key, so it takes
+        over from an On list that is still running (e.g. a fade)."""
         st["phase"] = "held"
-        st["record"] = {}
-        steps = st["map"].get("do") or []
-        st["steps"] = self.expand(steps)
-        ctx = copy.copy(self.ctx)
-        ctx.wing = Recorder(self.ctx.wing, st["record"])
-        ctx.led_record = st["led_record"] = {}
-        st["task"] = asyncio.create_task(
-            self._run(steps, ("momentary", st["layer"], st["wm"]), st["t0"], self._src(st), ctx))
+        self._led(st, "confirm")
+        self.run(st["map"].get("do") or [], (st["layer"], st["wm"]), t0=st["t0"], src=self._src(st))
 
-    async def _momentary_end(self, st):
-        """On release: stop the macro, restore what it changed, fade faders back."""
-        task = st["task"]
-        if not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-        for key, prev in st["led_record"].items():
-            if prev is None:
-                self.ctx.led_state.pop(key, None)
-            else:
-                self.ctx.led_state[key] = prev
-        w = self.ctx.wing
-        for path, value in st["record"].items():
-            if value is not None:
-                await w.set(path, value)
-        for s in reversed(st["steps"]):
-            if s.get("do") == "fade" and s.get("db") != "back":
-                await ACTIONS["fade"](self.ctx, dict(s, db="back", wait=False))
+    def _momentary_end(self, st):
+        self.run(st["map"].get("off") or [], (st["layer"], st["wm"]), src=self._src(st))
 
     # --- testing from the UI --------------------------------------------------
 
@@ -226,11 +184,10 @@ class Engine:
         if not m:
             raise ValueError(f"WM{wm} isn't mapped on layer {layer + 1}")
         st = {"phase": "pressed", "map": m, "layer": l, "wm": wm, "idx": m.get("led_index", idx), "t0": time.monotonic()}
-        if m.get("trigger") == "momentary":
-            self._led(st, "confirm")
+        if m.get("mode") == "momentary":
             self._momentary_start(st)
-            asyncio.get_running_loop().call_later(1.0, lambda: asyncio.create_task(self._momentary_end(st)))
-        elif m.get("trigger") == "hold":
+            asyncio.get_running_loop().call_later(1.0, self._momentary_end, st)
+        elif m.get("hold"):
             self._led(st, "confirm")
             self.fire(st)
         else:
@@ -277,8 +234,7 @@ class Engine:
                 log.warning("unknown action %r", st.get("do"))
                 continue
             try:
-                # fades always use the real client: a momentary release fades them back itself
-                c = self.ctx if ctx is None or st["do"] == "fade" else ctx
+                c = self.ctx if ctx is None else ctx
                 if st["do"] in ROTARY:
                     await fn(c, st, int(st.get("ticks", 1)))
                 else:
