@@ -75,3 +75,20 @@ slot back to NONE afterwards. Don't touch slots 1–4 and 9 (in use) except read
    mapping shows the param it resolves to now, and a clear "not in this model" state.
 
 Commit after each step; update CLAUDE.md (FX section) and `docs/config-model.md` with the outcome.
+
+## Next feature (after the FX work): console scenes / snippets
+
+The user wants keys to fire the **console's own** show scenes/snippets (Wing Edit's local shows aren't reachable).
+The console tree has a show-control node, so it looks possible:
+
+- `/$ctl/lib/$action` enum `IDLE, GOPREV, GONEXT, GO, PREV, NEXT, GOTAG` (writable), with `/$ctl/lib/$actionidx`
+  (int 0–16384) for the target index.
+- `/$ctl/lib/$scenes` (ro enum: the show's scene/snip list, empty when read on 2026-10-07), `$active` ("ACTIVE
+  SCENE/SNAP", str), `$actshow` ("ACTIVE SHOW"), `$activeid`, `$actidx` (ro).
+- Not in the protocol PDF beyond the path names; behaviour (what GOTAG / NEXT vs GONEXT do, whether `$actionidx` is
+  written first, snippets vs scenes) must be found by testing.
+
+Plan: a `scene` key action: Go next / Go previous / Select next / Select previous / Go to <scene from the console's
+list>. Picker reads `$scenes`. Pad screen shows the scene name after a recall (reuse `F0 06`).
+**Safety: recalling a scene changes the whole mix.** Ask the user before any live test; ideally they load a test show
+with harmless scenes first. Reading the `lib` nodes is safe.
