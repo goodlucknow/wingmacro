@@ -1,33 +1,49 @@
-# Handoff (2026-10-08): no active feature
+# Handoff (2026-10-09): in practical use, waiting for user feedback
 
-Read CLAUDE.md first. App running in the container: `cd app && setsid nohup ../.venv/bin/python -m wingmacro --web-host 0.0.0.0 > <scratchpad>/app.log`
-(find its PID with `ps -eo pid,args | awk '/python -m wingmacro --web-host/ && !/awk/'`; never `pkill -f`).
-Pad is plugged into the container, firmware proto 4. Console: WING Rack "FRack" at 10.0.1.8.
+Read CLAUDE.md first. No active feature. The user runs **v0.1.0-beta4** on the Mac (main host, next to the desk)
+and will report back after using it in practice. Start the next session from their report.
 
-## Done (2026-10-08)
+## State
 
-FX model changes + knob ends: built, unit-tested, live-tested on empty slot 8 (TAP-DL rep -> ST-DL feed,
-BODY -> "not in BODY"), UI checked in headless Chrome. See CLAUDE.md (FX) and `docs/config-model.md`.
-Headless Chrome: `~/.cache/ms-playwright/chromium_headless_shell-1243/...` needs
-`LD_LIBRARY_PATH=/tmp/claude-1001/-workspace-wingmacro/6ad255a2-b1de-4f08-8fc1-890b3b6be24c/scratchpad/libs/root/usr/lib/x86_64-linux-gnu`
-(may be gone; then extract libatk etc. from .debs again).
-Not checked: the pad OLED itself after a model change (unit test covers the label/"n/a").
+- Releases: `v0.1.0-beta1..4` (pre-releases, GitHub Actions `release.yml` builds Windows setup.exe + macOS
+  arm64/Intel dmgs on a `v*` tag in ~3 min). `gh` is authenticated in the container (`gh run watch`, `gh release view`).
+  The user OKs each tag; pushing a tag may need their approval in the permission prompt.
+- Mac beta4 tested by the user: runs, Quit works. Not yet tested: Windows build on the Surface (SmartScreen,
+  firewall prompt, AHK alongside), Mac Local Network prompt / start at login on a fresh install, sleep/wake reconnect.
+- Container: an app instance may still be running (`ps -eo pid,args | awk '/python -m wingmacro --web-host/ && !/awk/'`;
+  never `pkill -f`). Start: `cd app && setsid nohup ../.venv/bin/python -m wingmacro --web-host 0.0.0.0 > <scratchpad>/app.log`.
+  The pad is currently on the Mac, not the container. Console: WING Rack "FRack" at 10.0.1.8.
+- Live-console safety: model changes only on **empty FX slots** (5–8, 10–16 were NONE; restore NONE after).
+  CH 40 is the test channel.
 
-## Parked: console scenes / snippets (user, 2026-10-08)
+## Done 2026-10-08 (see CLAUDE.md / docs/config-model.md)
 
-Parked until the user finds a need in practice; may be better left to Wing Edit. Notes kept for then:
+- FX model changes: mappings follow to the equivalent param (key → role alias → long name → position → "n/a");
+  `pref` stamped on save/connect; UI "now: X (made on MODEL)". Survey: `docs/wing-fx-models-3.1.1.json`
+  (`tools/fx_survey.py`).
+- Param hashes are per model: `Wing.forget(node)` on `mdl` change and on refresh (fixed Factor knob doing nothing).
+- linf params are quantized to their `steps` grid: knob ticks move at least one grid step.
+- Knob option lists stop at the ends; per-step Wrap.
+- Tap tempo: pad screen + UI warn for slots without a ms `time` (OILCAN, BBD-DL). Measuring their knob→ms
+  curve was offered and declined.
+- Set level / Fade: Change by ±dB (`rel`) and Back (momentary boost: On +6 rel, Off Back).
+- Desktop: UI opens in a borderless Chrome `--app` window (Edge/Chromium/default browser fallback).
+- Quit: non-blocking on the Mac menu bar, web server `shutdown_timeout=1`, `os._exit` after shutdown.
 
-The user wants keys to fire the **console's own** show scenes/snippets (Wing Edit's local shows aren't reachable).
-The console tree has a show-control node, so it looks possible:
+## Tools
 
-- `/$ctl/lib/$action` enum `IDLE, GOPREV, GONEXT, GO, PREV, NEXT, GOTAG` (writable), with `/$ctl/lib/$actionidx`
-  (int 0–16384) for the target index.
-- `/$ctl/lib/$scenes` (ro enum: the show's scene/snip list, empty when read on 2026-10-07), `$active` ("ACTIVE
-  SCENE/SNAP", str), `$actshow` ("ACTIVE SHOW"), `$activeid`, `$actidx` (ro).
-- Not in the protocol PDF beyond the path names; behaviour (what GOTAG / NEXT vs GONEXT do, whether `$actionidx` is
-  written first, snippets vs scenes) must be found by testing.
+- `tools/ui_shot.py`: headless-Chrome screenshot of the UI with a temporary test macro (restores config).
+  Needs `~/.cache/ms-playwright/chromium_headless_shell-1243/...` plus libatk etc. on `LD_LIBRARY_PATH`
+  (an old scratchpad had them extracted under `.../scratchpad/libs/root/usr/lib/x86_64-linux-gnu`; may be gone,
+  then extract from the .debs again).
+- Live tests: drive steps through `POST /api/test/steps` (`{"steps": [{..., "ticks": n}]}`) and read back with a
+  second `Wing` client (24 clients allowed).
 
-Plan: a `scene` key action: Go next / Go previous / Select next / Select previous / Go to <scene from the console's
-list>. Picker reads `$scenes`. Pad screen shows the scene name after a recall (reuse `F0 06`).
-**Safety: recalling a scene changes the whole mix.** Ask the user before any live test; ideally they load a test show
-with harmless scenes first. Reading the `lib` nodes is safe.
+## Open (none started)
+
+- Linux systemd unit (`platform/linux/`), lowest packaging priority.
+- AHK improvements (scope to Wing Edit window, runtime screen size).
+- Parked: console scenes/snippets via `/$ctl/lib` (user, 2026-10-08: only if needed in practice; Wing Edit may
+  cover it). Known nodes: `/$ctl/lib/$action` enum `IDLE, GOPREV, GONEXT, GO, PREV, NEXT, GOTAG` (writable),
+  `$actionidx` (int 0–16384), `$scenes` (ro list), `$active`, `$actshow`, `$activeid`, `$actidx`. Behaviour must
+  be found by testing; recalling a scene changes the whole mix, so ask the user before any live test.
